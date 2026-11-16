@@ -19,13 +19,16 @@ import { HeaderIcon } from '@/components/header-icon';
 import { StatusScreen } from '@/components/status-screen';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { ANSWER_TIME_MS, ROUND_SIZE } from '@/constants/round';
 import { Spacing } from '@/constants/theme';
 import { listCards } from '@/db/cards';
 import { listMissedCardIds, saveRound } from '@/db/rounds';
+import { getSettings } from '@/db/settings';
 import type { Card } from '@/db/types';
 import { useTheme } from '@/hooks/use-theme';
-import { isFinished, pickRoundCards, sessionReducer, startSession } from '@/round/session';
+import { pickRoundCards, shuffle } from '@/round/picking';
+import { formatDelta } from '@/round/format';
+import { POINTS } from '@/round/scoring';
+import { isFinished, sessionReducer, startSession } from '@/round/session';
 
 const FLIP_MS = 450;
 const SLIDE_MS = 260;
@@ -33,22 +36,23 @@ const SLIDE_MS = 260;
 export default function RoundScreen() {
   const { deckId, fromRound } = useLocalSearchParams<{ deckId: string; fromRound?: string }>();
   const db = useSQLiteContext();
-  const [cards, setCards] = useState<Card[] | null>(null);
+  const [round, setRound] = useState<{ cards: Card[]; timeLimitMs: number | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Карточки выбираются один раз при открытии: состав раунда не должен меняться на ходу.
   useEffect(() => {
     let active = true;
     (async () => {
+      const settings = await getSettings(db);
       const all = await listCards(db, deckId);
-      if (!fromRound) return pickRoundCards(all, ROUND_SIZE);
+      const timeLimitMs = settings.timerSeconds > 0 ? settings.timerSeconds * 1000 : null;
+      if (!fromRound) {
+        return { cards: pickRoundCards(all, settings.roundSize, Date.now()), timeLimitMs };
+      }
       const missed = new Set((await listMissedCardIds(db, fromRound)).map((row) => row.id));
-      return pickRoundCards(
-        all.filter((card) => missed.has(card.id)),
-        missed.size,
-      );
+      return { cards: shuffle(all.filter((card) => missed.has(card.id))), timeLimitMs };
     })()
-      .then((picked) => active && setCards(picked))
+      .then((loaded) => active && setRound(loaded))
       .catch((e: unknown) => active && setError(e instanceof Error ? e.message : String(e)));
     return () => {
       active = false;
@@ -56,12 +60,14 @@ export default function RoundScreen() {
   }, [db, deckId, fromRound]);
 
   if (error) return <StatusScreen error={error} />;
-  if (!cards) return <StatusScreen />;
-  if (cards.length === 0) return <StatusScreen error="В стопке нет карточек для раунда." />;
-  return <RoundPlay deckId={deckId} cards={cards} />;
+  if (!round) return <StatusScreen />;
+  if (round.cards.length === 0) return <StatusScreen error="В стопке нет карточек для раунда." />;
+  return <RoundPlay deckId={deckId} cards={round.cards} timeLimitMs={round.timeLimitMs} />;
 }
 
-function RoundPlay({ deckId, cards }: { deckId: string; cards: Card[] }) {
+type RoundPlayProps = { deckId: string; cards: Card[]; timeLimitMs: number | null };
+
+function RoundPlay({ deckId, cards, timeLimitMs }: RoundPlayProps) {
   const db = useSQLiteContext();
   const router = useRouter();
   const theme = useTheme();
@@ -69,11 +75,13 @@ function RoundPlay({ deckId, cards }: { deckId: string; cards: Card[] }) {
   const { width } = useWindowDimensions();
   const reducedMotion = useReducedMotion();
 
-  const [session, dispatch] = useReducer(sessionReducer, cards, startSession);
+  const [session, dispatch] = useReducer(sessionReducer, undefined, () =>
+    startSession(cards, timeLimitMs),
+  );
   const [startedAt] = useState(() => Date.now());
   // Карточка на экране отстаёт от сессии на время анимации смены.
   const [shownIndex, setShownIndex] = useState(0);
-  const [remainingMs, setRemainingMs] = useState(ANSWER_TIME_MS);
+  const [remainingMs, setRemainingMs] = useState(timeLimitMs ?? 0);
   const [saveError, setSaveError] = useState<string | null>(null);
   const questionStart = useRef(0);
   const saving = useRef(false);
@@ -89,18 +97,19 @@ function RoundPlay({ deckId, cards }: { deckId: string; cards: Card[] }) {
   useEffect(() => {
     if (!asking) return;
     questionStart.current = Date.now();
+    if (!timeLimitMs) return;
     timer.value = 1;
-    timer.value = withTiming(0, { duration: ANSWER_TIME_MS, easing: Easing.linear });
+    timer.value = withTiming(0, { duration: timeLimitMs, easing: Easing.linear });
     const interval = setInterval(() => {
-      const left = ANSWER_TIME_MS - (Date.now() - questionStart.current);
+      const left = timeLimitMs - (Date.now() - questionStart.current);
       setRemainingMs(Math.max(0, left));
-      if (left <= 0) dispatch({ type: 'reveal', by: 'timeout', timeMs: ANSWER_TIME_MS });
+      if (left <= 0) dispatch({ type: 'reveal', by: 'timeout', timeMs: timeLimitMs });
     }, 200);
     return () => {
       clearInterval(interval);
       cancelAnimation(timer);
     };
-  }, [asking, shownIndex, timer]);
+  }, [asking, shownIndex, timer, timeLimitMs]);
 
   // Переворот при открытии оборота.
   useEffect(() => {
@@ -131,7 +140,7 @@ function RoundPlay({ deckId, cards }: { deckId: string; cards: Card[] }) {
         return;
       }
       flip.value = 0;
-      setRemainingMs(ANSWER_TIME_MS);
+      setRemainingMs(timeLimitMs ?? 0);
       setShownIndex(session.index);
       slide.value = withSequence(
         withTiming(1, { duration: 0 }),
@@ -139,7 +148,7 @@ function RoundPlay({ deckId, cards }: { deckId: string; cards: Card[] }) {
       );
     }, SLIDE_MS + 20);
     return () => clearTimeout(timeout);
-  }, [transitioning, session, finish, flip, slide]);
+  }, [transitioning, session, finish, flip, slide, timeLimitMs]);
 
   const confirmExit = useCallback(() => {
     Alert.alert('Прервать раунд?', 'Ответы этого раунда не сохранятся.', [
@@ -163,7 +172,9 @@ function RoundPlay({ deckId, cards }: { deckId: string; cards: Card[] }) {
   }));
   const timerStyle = useAnimatedStyle(() => ({ width: `${timer.value * 100}%` }));
 
-  const card = cards[shownIndex];
+  const item = session.queue[shownIndex];
+  const total = session.queue.length;
+  const lastAnswer = session.answers.at(-1);
   const seconds = Math.ceil(remainingMs / 1000);
   const timeLow = remainingMs <= 5000;
 
@@ -178,12 +189,26 @@ function RoundPlay({ deckId, cards }: { deckId: string; cards: Card[] }) {
       </>
     );
   } else if (transitioning) {
-    controls = null;
+    // Пока карточка сменяется, показываем, сколько очков принёс ответ.
+    controls = lastAnswer && (
+      <ThemedText
+        type="smallBold"
+        style={[
+          styles.center,
+          { color: lastAnswer.points > 0 ? theme.success : lastAnswer.points < 0 ? theme.danger : theme.textSecondary },
+        ]}>
+        {formatDelta(lastAnswer.points)} очк.
+      </ThemedText>
+    );
   } else if (session.phase === 'question') {
     controls = (
       <>
         <Button title="Проверить" variant="primary" onPress={() => reveal('check')} />
-        <Button title="Подсказка" icon="bulb-outline" onPress={() => reveal('hint')} />
+        <Button
+          title={`Подсказка ${formatDelta(POINTS.penalty)}`}
+          icon="bulb-outline"
+          onPress={() => reveal('hint')}
+        />
       </>
     );
   } else if (session.reveal === 'check') {
@@ -211,7 +236,8 @@ function RoundPlay({ deckId, cards }: { deckId: string; cards: Card[] }) {
     controls = (
       <>
         <ThemedText type="small" themeColor="textSecondary" style={styles.center}>
-          {session.reveal === 'timeout' ? 'Время вышло' : 'Открыто по подсказке'}
+          {session.reveal === 'timeout' ? 'Время вышло' : 'Открыто по подсказке'} ·{' '}
+          {formatDelta(POINTS.penalty)}
         </ThemedText>
         <Button title="Дальше" variant="primary" onPress={() => dispatch({ type: 'continue' })} />
       </>
@@ -222,7 +248,12 @@ function RoundPlay({ deckId, cards }: { deckId: string; cards: Card[] }) {
     <ThemedView style={[styles.container, { paddingBottom: insets.bottom + Spacing.three }]}>
       <Stack.Screen
         options={{
-          title: `${Math.min(shownIndex + 1, cards.length)} из ${cards.length}`,
+          title: `${Math.min(shownIndex + 1, total)} из ${total}`,
+          headerRight: () => (
+            <View style={[styles.score, { backgroundColor: theme.backgroundElement }]}>
+              <ThemedText type="smallBold">{session.score} очк.</ThemedText>
+            </View>
+          ),
           headerBackVisible: false,
           gestureEnabled: false,
           headerLeft: () => (
@@ -236,10 +267,11 @@ function RoundPlay({ deckId, cards }: { deckId: string; cards: Card[] }) {
         <View
           style={[
             styles.fill,
-            { backgroundColor: theme.accent, width: `${(session.index / cards.length) * 100}%` },
+            { backgroundColor: theme.accent, width: `${(session.index / total) * 100}%` },
           ]}
         />
       </View>
+      {timeLimitMs !== null && (
       <View style={[styles.timerRow, !asking && styles.hidden]}>
         <View style={[styles.track, styles.flex, { backgroundColor: theme.backgroundSelected }]}>
           <Animated.View
@@ -254,11 +286,18 @@ function RoundPlay({ deckId, cards }: { deckId: string; cards: Card[] }) {
           type="smallBold"
           style={[styles.seconds, timeLow && { color: theme.danger }]}
           accessibilityLabel={`Осталось секунд: ${seconds}`}>
-          0:{String(seconds).padStart(2, '0')}
+          {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, '0')}
         </ThemedText>
       </View>
+      )}
       <Animated.View style={[styles.flex, slideStyle]}>
-        <FlipCard front={card.front} back={card.back} flip={flip} reducedMotion={reducedMotion} />
+        <FlipCard
+          front={item.card.front}
+          back={item.card.back}
+          caption={item.repeat ? 'Повтор после ошибки. Вспомни, что на обороте' : 'Вспомни, что на обороте'}
+          flip={flip}
+          reducedMotion={reducedMotion}
+        />
       </Animated.View>
       <View style={styles.controls}>{controls}</View>
     </ThemedView>
@@ -269,6 +308,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, padding: Spacing.three, gap: Spacing.three },
   flex: { flex: 1 },
   headerLeft: { marginRight: Spacing.three },
+  score: { borderRadius: 14, paddingHorizontal: Spacing.three, paddingVertical: Spacing.one },
   track: { height: 6, borderRadius: 3, overflow: 'hidden' },
   fill: { height: 6, borderRadius: 3 },
   timerRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },

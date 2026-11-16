@@ -11,6 +11,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { listDecks } from '@/db/decks';
+import { getScoreStats } from '@/db/stats';
 import { useFocusLoad } from '@/hooks/use-focus-load';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -19,7 +20,11 @@ export default function DecksScreen() {
   const router = useRouter();
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const { data: decks, error } = useFocusLoad(useCallback(() => listDecks(db), [db]));
+  const { data, error } = useFocusLoad(
+    useCallback(async () => ({ decks: await listDecks(db), stats: await getScoreStats(db) }), [db]),
+  );
+  const decks = data?.decks;
+  const stats = data?.stats;
 
   if (error) return <StatusScreen error={`Не удалось прочитать базу. ${error}`} />;
 
@@ -40,6 +45,30 @@ export default function DecksScreen() {
         data={decks ?? []}
         keyExtractor={(deck) => deck.id}
         contentContainerStyle={styles.list}
+        ListHeaderComponent={
+          stats && stats.bestRound > 0 ? (
+            <View style={styles.stats}>
+              <View style={[styles.stat, { backgroundColor: theme.backgroundElement }]}>
+                <ThemedText type="small" themeColor="textSecondary">
+                  Сегодня
+                </ThemedText>
+                <ThemedText type="subtitle">{stats.today}</ThemedText>
+                <ThemedText type="small" themeColor="textSecondary">
+                  рекорд дня {stats.bestDay}
+                </ThemedText>
+              </View>
+              <View style={[styles.stat, { backgroundColor: theme.backgroundElement }]}>
+                <ThemedText type="small" themeColor="textSecondary">
+                  Лучший раунд
+                </ThemedText>
+                <ThemedText type="subtitle">{stats.bestRound}</ThemedText>
+                <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
+                  {stats.bestRoundDeck ?? 'очков'}
+                </ThemedText>
+              </View>
+            </View>
+          ) : undefined
+        }
         ListEmptyComponent={
           decks ? (
             <View style={styles.empty}>
@@ -74,6 +103,8 @@ export default function DecksScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, paddingHorizontal: Spacing.three },
   list: { flexGrow: 1, gap: Spacing.two, paddingVertical: Spacing.three },
+  stats: { flexDirection: 'row', gap: Spacing.two, marginBottom: Spacing.two },
+  stat: { flex: 1, borderRadius: 12, padding: Spacing.three },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.two },
   center: { textAlign: 'center' },
   row: { borderWidth: 1, borderRadius: 12, padding: Spacing.three, gap: Spacing.one },

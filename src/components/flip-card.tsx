@@ -12,13 +12,15 @@ import { useTheme } from '@/hooks/use-theme';
 type Props = {
   front: string;
   back: string;
+  /** Подпись под словом на лицевой стороне. */
+  caption: string;
   /** 0 — видна сторона со словом, 1 — оборот. */
   flip: SharedValue<number>;
   /** При «уменьшении движения» стороны проявляются без переворота. */
   reducedMotion: boolean;
 };
 
-export function FlipCard({ front, back, flip, reducedMotion }: Props) {
+export function FlipCard({ front, back, caption, flip, reducedMotion }: Props) {
   const theme = useTheme();
 
   const frontStyle = useAnimatedStyle(() =>
@@ -50,8 +52,8 @@ export function FlipCard({ front, back, flip, reducedMotion }: Props) {
         <ThemedText type="subtitle" style={styles.center} adjustsFontSizeToFit numberOfLines={4}>
           {front}
         </ThemedText>
-        <ThemedText type="small" themeColor="textSecondary">
-          Вспомни, что на обороте
+        <ThemedText type="small" themeColor="textSecondary" style={styles.center}>
+          {caption}
         </ThemedText>
       </Animated.View>
       <Animated.View style={[face, backStyle]}>

@@ -1,5 +1,5 @@
-import type { SessionAnswer } from '@/round/session';
-import { totals } from '@/round/session';
+import { applyAnswer, type Progress } from '@/round/levels';
+import { totals, type SessionAnswer } from '@/round/session';
 
 import type { Db } from './db';
 import { newId } from './ids';
@@ -10,6 +10,7 @@ export interface RoundAnswer {
   front: string;
   back: string;
   result: AnswerResult;
+  points: number;
 }
 
 export interface RoundResult {
@@ -17,7 +18,10 @@ export interface RoundResult {
   answers: RoundAnswer[];
 }
 
-/** Сохраняет завершённый раунд вместе с ответами. Очки начисляются на этапе 4. */
+/**
+ * Сохраняет завершённый раунд: итоги, ответы с очками и новый прогресс карточек.
+ * Всё в одной транзакции — раунд не может сохраниться наполовину.
+ */
 export async function saveRound(
   db: Db,
   deckId: string,
@@ -27,24 +31,41 @@ export async function saveRound(
 ): Promise<string> {
   const roundId = newId();
   const { correct, wrong, hints } = totals(answers);
+  const score = answers.reduce((sum, answer) => sum + answer.points, 0);
+
   await db.withTransactionAsync(async () => {
     await db.runAsync(
       `INSERT INTO rounds (id, deck_id, started_at, finished_at, correct, wrong, hints, score, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)`,
-      [roundId, deckId, startedAt, now, correct, wrong, hints, now],
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [roundId, deckId, startedAt, now, correct, wrong, hints, score, now],
     );
     for (const answer of answers) {
       await db.runAsync(
         `INSERT INTO answers (id, round_id, card_id, result, time_ms, points, created_at)
-         VALUES (?, ?, ?, ?, ?, 0, ?)`,
-        [newId(), roundId, answer.cardId, answer.result, Math.round(answer.timeMs), now],
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [newId(), roundId, answer.cardId, answer.result, Math.round(answer.timeMs), answer.points, now],
       );
     }
-    await db.runAsync(
-      `UPDATE cards SET last_shown_at = ?, updated_at = ?
-        WHERE id IN (SELECT card_id FROM answers WHERE round_id = ?)`,
-      [now, now, roundId],
-    );
+
+    // Прогресс каждой карточки: её ответы применяются по порядку показа.
+    const byCard = new Map<string, AnswerResult[]>();
+    for (const answer of answers) {
+      byCard.set(answer.cardId, [...(byCard.get(answer.cardId) ?? []), answer.result]);
+    }
+    for (const [cardId, results] of byCard) {
+      const current = await db.getFirstAsync<Progress>(
+        `SELECT level, correct_count, wrong_count FROM cards WHERE id = ?`,
+        [cardId],
+      );
+      if (!current) continue;
+      const next = results.reduce(applyAnswer, current);
+      await db.runAsync(
+        `UPDATE cards
+            SET level = ?, correct_count = ?, wrong_count = ?, last_shown_at = ?, updated_at = ?
+          WHERE id = ?`,
+        [next.level, next.correct_count, next.wrong_count, now, now, cardId],
+      );
+    }
   });
   return roundId;
 }
@@ -56,7 +77,7 @@ export async function getRoundResult(db: Db, roundId: string): Promise<RoundResu
   );
   if (!round) return null;
   const answers = await db.getAllAsync<RoundAnswer>(
-    `SELECT a.card_id, c.front, c.back, a.result
+    `SELECT a.card_id, c.front, c.back, a.result, a.points
        FROM answers a JOIN cards c ON c.id = a.card_id
       WHERE a.round_id = ?
       ORDER BY a.rowid`,
