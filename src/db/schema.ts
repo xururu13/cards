@@ -73,4 +73,13 @@ export const MIGRATIONS: readonly string[] = [
     value TEXT NOT NULL
   );
   `,
+  `
+  -- Наборы карточек, загруженные из файла (исходный текст YAML). Только на этом устройстве:
+  -- сами карточки после загрузки в стопку синхронизируются как обычно.
+  CREATE TABLE catalog_sets (
+    id TEXT PRIMARY KEY NOT NULL,
+    source TEXT NOT NULL,
+    imported_at INTEGER NOT NULL
+  );
+  `,
 ];

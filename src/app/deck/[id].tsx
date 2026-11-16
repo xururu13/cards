@@ -1,10 +1,12 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback } from 'react';
-import { FlatList, Pressable, StyleSheet, View } from 'react-native';
+import { Alert, FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
+import { deckToCatalogSet } from '@/catalog/catalog';
+import { shareCatalogSet } from '@/catalog/share-file';
 import { HeaderIcon } from '@/components/header-icon';
 import { StatusScreen } from '@/components/status-screen';
 import { ThemedText } from '@/components/themed-text';
@@ -47,6 +49,13 @@ export default function DeckScreen() {
     known: theme.success,
   };
   const progress = deck.card_count ? deck.known_count / deck.card_count : 0;
+  const share = () =>
+    shareCatalogSet(
+      // В файле — в том же порядке, что на экране стопки.
+      deckToCatalogSet(deck, cards.map(({ front, back }) => ({ front, back }))),
+    ).catch((e: unknown) =>
+      Alert.alert('Не получилось поделиться', e instanceof Error ? e.message : String(e)),
+    );
   const addCard = () => router.push({ pathname: '/card/new', params: { deckId: deck.id } });
 
   return (
@@ -55,11 +64,16 @@ export default function DeckScreen() {
         options={{
           title: deck.name,
           headerRight: () => (
-            <HeaderIcon
-              name="create-outline"
-              label="Изменить стопку"
-              onPress={() => router.push({ pathname: '/deck/edit', params: { id: deck.id } })}
-            />
+            <View style={styles.headerIcons}>
+              {cards.length > 0 && (
+                <HeaderIcon name="share-outline" label="Поделиться стопкой" onPress={share} />
+              )}
+              <HeaderIcon
+                name="create-outline"
+                label="Изменить стопку"
+                onPress={() => router.push({ pathname: '/deck/edit', params: { id: deck.id } })}
+              />
+            </View>
           ),
         }}
       />
@@ -154,5 +168,6 @@ const styles = StyleSheet.create({
   },
   rowText: { flex: 1, gap: Spacing.half },
   actions: { flexDirection: 'row', gap: Spacing.two },
+  headerIcons: { flexDirection: 'row', gap: Spacing.four },
   action: { flex: 1 },
 });

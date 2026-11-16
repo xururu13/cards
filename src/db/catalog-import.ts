@@ -26,13 +26,13 @@ export function catalogCardId(deckId: string, setId: string, front: string): str
 export async function importCatalog(
   db: Db,
   set: CatalogSet,
-  sectionNumbers: readonly number[],
+  sectionKeys: readonly number[],
   target: ImportTarget,
   now = Date.now(),
 ): Promise<ImportResult> {
-  const chosen = new Set(sectionNumbers);
+  const chosen = new Set(sectionKeys);
   const cards = allSections(set)
-    .filter((section) => chosen.has(section.number))
+    .filter((section) => chosen.has(section.key))
     .flatMap((section) => section.cards);
   if (cards.length === 0) throw new Error('Выбери хотя бы один параграф');
 
@@ -59,7 +59,7 @@ export async function importCatalog(
   return result!;
 }
 
-/** Номера параграфов набора, все карточки которых уже есть в стопке. */
+/** Ключи параграфов набора, все карточки которых уже есть в стопке. */
 export async function loadedSections(db: Db, set: CatalogSet, deckId: string): Promise<number[]> {
   const rows = await db.getAllAsync<{ id: string }>(
     `SELECT id FROM cards WHERE deck_id = ? AND id LIKE ?`,
@@ -68,5 +68,5 @@ export async function loadedSections(db: Db, set: CatalogSet, deckId: string): P
   const ids = new Set(rows.map((row) => row.id));
   return allSections(set)
     .filter((section) => section.cards.every((card) => ids.has(catalogCardId(deckId, set.id, card.front))))
-    .map((section) => section.number);
+    .map((section) => section.key);
 }

@@ -1,8 +1,10 @@
 /**
- * Готовые наборы карточек по учебникам. Каждый набор — JSON-файл в src/catalog/sets/,
- * формат описан типом CatalogSet. Новый набор: положить файл и добавить его в RAW_SETS.
+ * Наборы карточек по учебникам. В приложение не встроены: пользователь загружает их
+ * из YAML-файла. Формат файла описан в docs/catalog-format.md.
  */
-import biology7Pasechnik from './sets/biology-7-pasechnik.json';
+import { parse, stringify, YAMLParseError } from 'yaml';
+
+import { DEFAULT_LANGUAGE, LANGUAGES } from '@/constants/languages';
 
 export interface CatalogCard {
   front: string;
@@ -10,8 +12,10 @@ export interface CatalogCard {
 }
 
 export interface CatalogSection {
-  /** Номер параграфа в учебнике. */
-  number: number;
+  /** Порядковый номер параграфа в наборе, начиная с 1. По нему выбирают параграфы на экране. */
+  key: number;
+  /** Номер параграфа в учебнике, если он есть. */
+  number?: number;
   title: string;
   cards: CatalogCard[];
 }
@@ -22,52 +26,63 @@ export interface CatalogChapter {
 }
 
 export interface CatalogSet {
-  format: 'kartochki-catalog';
-  version: 1;
-  /** Постоянный идентификатор набора: из него строятся id карточек, менять нельзя. */
+  /** Постоянный идентификатор набора: из него строятся id карточек. */
   id: string;
   title: string;
-  source: string;
+  source?: string;
   frontLang: string;
   backLang: string;
   chapters: CatalogChapter[];
 }
 
-function fail(setId: string, message: string): never {
-  throw new Error(`Набор ${setId}: ${message}`);
+export const MAX_FRONT = 200;
+export const MAX_BACK = 1000;
+
+export class CatalogError extends Error {}
+
+const fail = (message: string): never => {
+  throw new CatalogError(message);
+};
+
+type Raw = Record<string, unknown>;
+const isObject = (value: unknown): value is Raw =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+function text(value: unknown, where: string): string {
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (typeof value !== 'string' || !value.trim()) fail(`${where}: пусто`);
+  return (value as string).trim();
 }
 
-const isText = (value: unknown): value is string => typeof value === 'string' && value.trim() !== '';
+function optionalText(value: unknown, where: string): string | undefined {
+  return value === undefined || value === null ? undefined : text(value, where);
+}
 
-/** Проверяет набор: обязательные поля, уникальные номера параграфов и термины. */
-export function parseCatalogSet(raw: unknown): CatalogSet {
-  const set = raw as Partial<CatalogSet> | null;
-  const id = typeof set?.id === 'string' ? set.id : '?';
-  if (set?.format !== 'kartochki-catalog' || set.version !== 1) fail(id, 'неизвестный формат');
-  if (!/^[a-z0-9-]+$/.test(id)) fail(id, 'id — только латиница, цифры и дефис');
-  for (const field of ['title', 'source', 'frontLang', 'backLang'] as const) {
-    if (!isText(set[field])) fail(id, `нет поля ${field}`);
-  }
-  if (!Array.isArray(set.chapters) || set.chapters.length === 0) fail(id, 'нет глав');
+/** Язык диктовки: ru, en или полный код из LANGUAGES. По умолчанию русский. */
+function language(value: unknown, field: string): string {
+  const code = optionalText(value, field);
+  if (code === undefined) return DEFAULT_LANGUAGE;
+  const found = LANGUAGES.find(
+    (l) => l.code.toLowerCase() === code.toLowerCase() || l.short.toLowerCase() === code.toLowerCase(),
+  );
+  if (!found) fail(`${field}: язык «${code}» не поддерживается, можно ${LANGUAGES.map((l) => l.short.toLowerCase()).join(' или ')}`);
+  return found!.code;
+}
 
-  const numbers = new Set<number>();
-  const fronts = new Set<string>();
-  for (const chapter of set.chapters) {
-    if (!isText(chapter?.title) || !Array.isArray(chapter.sections)) fail(id, 'глава без названия или параграфов');
-    for (const section of chapter.sections) {
-      if (!Number.isInteger(section?.number) || !isText(section.title)) fail(id, 'параграф без номера или названия');
-      if (numbers.has(section.number)) fail(id, `параграф §${section.number} повторяется`);
-      numbers.add(section.number);
-      if (!Array.isArray(section.cards) || section.cards.length === 0) fail(id, `§${section.number} без карточек`);
-      for (const card of section.cards) {
-        if (!isText(card?.front) || !isText(card.back)) fail(id, `пустая карточка в §${section.number}`);
-        const key = cardKey(card.front);
-        if (fronts.has(key)) fail(id, `термин «${card.front}» повторяется`);
-        fronts.add(key);
-      }
-    }
-  }
-  return set as CatalogSet;
+/** Карточки — словарь «термин: определение» или список {front, back}. */
+function parseCards(raw: unknown, where: string): CatalogCard[] {
+  const pairs: [unknown, unknown][] = Array.isArray(raw)
+    ? raw.map((item) => (isObject(item) ? [item.front, item.back] : fail(`${where}: карточка должна быть парой «термин: определение»`)))
+    : isObject(raw)
+      ? Object.entries(raw)
+      : fail(`${where}: нет карточек (cards)`);
+  if (pairs.length === 0) fail(`${where}: нет карточек (cards)`);
+  return pairs.map(([front, back]) => {
+    const card = { front: text(front, `${where}, термин`), back: text(back, `${where}, «${String(front)}»`) };
+    if (card.front.length > MAX_FRONT) fail(`${where}: термин «${card.front.slice(0, 30)}…» длиннее ${MAX_FRONT} знаков`);
+    if (card.back.length > MAX_BACK) fail(`${where}: определение «${card.front}» длиннее ${MAX_BACK} знаков`);
+    return card;
+  });
 }
 
 /** Ключ карточки внутри набора. Тот же термин при повторной загрузке даёт тот же ключ. */
@@ -75,28 +90,150 @@ export function cardKey(front: string): string {
   return front.trim().toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ');
 }
 
+/** Проверяет набор и приводит к единому виду. Ошибки — понятным текстом для пользователя. */
+export function parseCatalogSet(raw: unknown): CatalogSet {
+  if (!isObject(raw)) fail('Файл не похож на набор карточек: нужны поля title и chapters.');
+  const set = raw as Raw;
+  if (set.format !== undefined && set.format !== 'kartochki-catalog') fail('Неизвестный формат файла.');
+  if (set.version !== undefined && set.version !== 1) fail('Файл сделан для более новой версии приложения.');
+
+  const title = text(set.title, 'Название набора (title)');
+  const id = (optionalText(set.id, 'id') ?? cardKey(title)).replace(/:/g, '-');
+  if (!Array.isArray(set.chapters) || set.chapters.length === 0) fail('В наборе нет глав (chapters).');
+
+  const numbers = new Set<number>();
+  const fronts = new Set<string>();
+  let key = 0;
+  const chapters = (set.chapters as unknown[]).map((rawChapter, i): CatalogChapter => {
+    if (!isObject(rawChapter)) fail(`Глава ${i + 1}: нужны title и sections`);
+    const chapter = rawChapter as Raw;
+    const chapterTitle = text(chapter.title, `Глава ${i + 1}, название`);
+    if (!Array.isArray(chapter.sections) || chapter.sections.length === 0) {
+      fail(`«${chapterTitle}»: нет параграфов (sections)`);
+    }
+    const sections = (chapter.sections as unknown[]).map((rawSection, j): CatalogSection => {
+      if (!isObject(rawSection)) fail(`«${chapterTitle}», параграф ${j + 1}: нужны title и cards`);
+      const section = rawSection as Raw;
+      const sectionTitle = text(section.title, `«${chapterTitle}», параграф ${j + 1}, название`);
+      let number: number | undefined;
+      if (section.number !== undefined && section.number !== null) {
+        if (!Number.isInteger(section.number) || (section.number as number) < 0) {
+          fail(`«${sectionTitle}»: номер параграфа должен быть целым числом`);
+        }
+        number = section.number as number;
+        if (numbers.has(number)) fail(`Параграф §${number} повторяется`);
+        numbers.add(number);
+      }
+      const cards = parseCards(section.cards, number === undefined ? `«${sectionTitle}»` : `§${number}`);
+      for (const card of cards) {
+        const k = cardKey(card.front);
+        if (fronts.has(k)) fail(`Термин «${card.front}» повторяется`);
+        fronts.add(k);
+      }
+      return { key: ++key, number, title: sectionTitle, cards };
+    });
+    return { title: chapterTitle, sections };
+  });
+
+  return {
+    id,
+    title,
+    source: optionalText(set.source, 'source'),
+    frontLang: language(set.frontLang, 'frontLang'),
+    backLang: language(set.backLang, 'backLang'),
+    chapters,
+  };
+}
+
+/** Разбирает текст файла: YAML (или JSON — он тоже YAML). */
+export function parseCatalogText(source: string): CatalogSet {
+  let raw: unknown;
+  try {
+    raw = parse(source);
+  } catch (e) {
+    const line = e instanceof YAMLParseError ? e.linePos?.[0]?.line : undefined;
+    throw new CatalogError(
+      `${line ? `Ошибка в строке ${line}` : 'Файл не читается как YAML'}. ` +
+        'Проверь отступы (только пробелы) и двоеточия: если в тексте есть «: », возьми его в кавычки.',
+    );
+  }
+  return parseCatalogSet(raw);
+}
+
 export function allSections(set: CatalogSet): CatalogSection[] {
   return set.chapters.flatMap((chapter) => chapter.sections);
 }
 
-const RAW_SETS: unknown[] = [biology7Pasechnik];
-
-export const CATALOG: readonly CatalogSet[] = RAW_SETS.map(parseCatalogSet);
-
-export function getCatalogSet(id: string): CatalogSet | undefined {
-  return CATALOG.find((set) => set.id === id);
+export function countCards(set: CatalogSet): number {
+  return allSections(set).reduce((sum, s) => sum + s.cards.length, 0);
 }
 
-/** Название стопки по выбранным параграфам: глава, один параграф или весь предмет. */
-export function suggestDeckName(set: CatalogSet, numbers: readonly number[]): string {
-  const chosen = new Set(numbers);
+export function sectionLabel(section: CatalogSection): string {
+  return section.number === undefined ? section.title : `§${section.number}. ${section.title}`;
+}
+
+const YAML_HEADER =
+  '# Набор карточек для приложения «Карточки».\n' +
+  '# Загрузить: «Новая стопка» → «Наборы карточек» → «Загрузить из файла».\n\n';
+
+const shortLanguage = (code: string) =>
+  (LANGUAGES.find((l) => l.code === code)?.short ?? code).toLowerCase();
+
+/** Набор в виде YAML-файла — того же формата, что принимает «Загрузить из файла». */
+export function catalogSetToYaml(set: CatalogSet): string {
+  const doc = {
+    id: set.id,
+    title: set.title,
+    ...(set.source ? { source: set.source } : {}),
+    frontLang: shortLanguage(set.frontLang),
+    backLang: shortLanguage(set.backLang),
+    chapters: set.chapters.map((chapter) => ({
+      title: chapter.title,
+      sections: chapter.sections.map((section) => ({
+        ...(section.number === undefined ? {} : { number: section.number }),
+        title: section.title,
+        cards: Object.fromEntries(section.cards.map((card) => [card.front, card.back])),
+      })),
+    })),
+  };
+  return YAML_HEADER + stringify(doc, { lineWidth: 0 });
+}
+
+/**
+ * Стопка как набор из одной главы и одного параграфа. Повторяющиеся термины получают
+ * номер «(2)», иначе файл не загрузится.
+ */
+export function deckToCatalogSet(
+  deck: { name: string; front_lang: string; back_lang: string },
+  cards: readonly CatalogCard[],
+): CatalogSet {
+  const seen = new Map<string, number>();
+  const unique = cards.map((card) => {
+    const key = cardKey(card.front);
+    const n = (seen.get(key) ?? 0) + 1;
+    seen.set(key, n);
+    return n === 1 ? card : { ...card, front: `${card.front} (${n})` };
+  });
+  return {
+    id: cardKey(deck.name).replace(/:/g, '-'),
+    title: deck.name,
+    frontLang: deck.front_lang,
+    backLang: deck.back_lang,
+    chapters: [{ title: deck.name, sections: [{ key: 1, title: deck.name, cards: unique }] }],
+  };
+}
+
+/** Название стопки по выбранным параграфам: один параграф, одна глава или весь набор. */
+export function suggestDeckName(set: CatalogSet, keys: readonly number[]): string {
+  const chosen = new Set(keys);
   if (chosen.size === 1) {
-    const section = allSections(set).find((s) => chosen.has(s.number));
-    if (section) return `§${section.number}. ${section.title}`.slice(0, 60);
+    const section = allSections(set).find((s) => chosen.has(s.key));
+    if (section) return sectionLabel(section).slice(0, 60);
   }
-  const chapters = set.chapters.filter((chapter) => chapter.sections.some((s) => chosen.has(s.number)));
+  const chapters = set.chapters.filter((chapter) => chapter.sections.some((s) => chosen.has(s.key)));
   if (chapters.length === 1) {
-    return `${set.title.split('.')[0]}: ${chapters[0].title.replace(/^Глава \d+\.\s*/, '')}`.slice(0, 60);
+    const subject = set.title.split('.')[0];
+    return `${subject}: ${chapters[0].title.replace(/^Глава \d+\.\s*/, '')}`.slice(0, 60);
   }
-  return set.title;
+  return set.title.slice(0, 60);
 }

@@ -11,7 +11,7 @@ type Props = {
   submitTitle: string;
   onSubmit: (input: DeckInput) => Promise<void>;
   onDelete?: () => void;
-  /** Показать кнопку «Готовые карточки из учебника». */
+  /** Показать кнопку «Наборы карточек». */
   onCatalog?: () => void;
 };
 
@@ -38,7 +38,7 @@ export function DeckForm({ initial, submitTitle, onSubmit, onDelete, onCatalog }
       footer={
         <>
           <Button title={submitTitle} variant="primary" onPress={submit} />
-          {onCatalog && <Button title="Готовые карточки из учебника" icon="library-outline" onPress={onCatalog} />}
+          {onCatalog && <Button title="Наборы карточек" icon="library-outline" onPress={onCatalog} />}
           {onDelete && <Button title="Удалить стопку" variant="danger" onPress={onDelete} />}
         </>
       }>

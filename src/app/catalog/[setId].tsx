@@ -9,9 +9,10 @@ import { FieldLabel, FormError, FormScreen } from '@/components/form';
 import { StatusScreen } from '@/components/status-screen';
 import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
-import { allSections, getCatalogSet, suggestDeckName, type CatalogSection } from '@/catalog/catalog';
+import { allSections, sectionLabel, suggestDeckName, type CatalogSection } from '@/catalog/catalog';
 import { Spacing } from '@/constants/theme';
 import { importCatalog, loadedSections } from '@/db/catalog-import';
+import { loadCatalogSet } from '@/db/catalog-sets';
 import { getDeck } from '@/db/decks';
 import { useFocusLoad } from '@/hooks/use-focus-load';
 import { useTheme } from '@/hooks/use-theme';
@@ -30,14 +31,14 @@ export default function CatalogSetScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
   const theme = useTheme();
-  const set = getCatalogSet(setId);
 
   const { data, error: loadError } = useFocusLoad(
     useCallback(async () => {
-      if (!set || !deckId) return { deckName: null, loaded: [] as number[] };
+      const set = await loadCatalogSet(db, setId);
+      if (!set || !deckId) return { set, deckName: null, loaded: [] as number[] };
       const deck = await getDeck(db, deckId);
-      return { deckName: deck?.name ?? null, loaded: await loadedSections(db, set, deckId) };
-    }, [db, set, deckId]),
+      return { set, deckName: deck?.name ?? null, loaded: await loadedSections(db, set, deckId) };
+    }, [db, setId, deckId]),
   );
 
   const [selected, setSelected] = useState<ReadonlySet<number>>(new Set());
@@ -45,26 +46,27 @@ export default function CatalogSetScreen() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  if (!set) return <StatusScreen error="Набор не найден." />;
   if (loadError) return <StatusScreen error={loadError} />;
   if (!data) return <StatusScreen />;
+  const { set } = data;
+  if (!set) return <StatusScreen error="Набор не найден." />;
   if (deckId && !data.deckName) return <StatusScreen error="Стопка не найдена." />;
 
   const loaded = new Set(data.loaded);
-  const numbers = [...selected];
+  const keys = [...selected];
   const count = allSections(set)
-    .filter((s) => selected.has(s.number))
+    .filter((s) => selected.has(s.key))
     .reduce((sum, s) => sum + s.cards.length, 0);
-  const deckName = name ?? suggestDeckName(set, numbers);
+  const deckName = name ?? suggestDeckName(set, keys);
 
   const toggle = (sections: CatalogSection[]) => {
     setError(null);
     setSelected((current) => {
       const next = new Set(current);
-      const all = sections.every((s) => next.has(s.number));
+      const all = sections.every((s) => next.has(s.key));
       for (const s of sections) {
-        if (all) next.delete(s.number);
-        else next.add(s.number);
+        if (all) next.delete(s.key);
+        else next.add(s.key);
       }
       return next;
     });
@@ -84,7 +86,7 @@ export default function CatalogSetScreen() {
       const result = await importCatalog(
         db,
         set,
-        numbers,
+        keys,
         deckId ? { deckId } : { newDeckName: deckName },
       );
       if (result.added === 0) {
@@ -124,7 +126,7 @@ export default function CatalogSetScreen() {
       }>
       <Stack.Screen options={{ title: set.title }} />
       <ThemedText type="small" themeColor="textSecondary">
-        {set.source}
+        {set.source ?? ''}
       </ThemedText>
       {deckId ? (
         <ThemedText type="small" themeColor="textSecondary">
@@ -145,7 +147,7 @@ export default function CatalogSetScreen() {
         </>
       )}
       {set.chapters.map((chapter) => {
-        const chosen = chapter.sections.filter((s) => selected.has(s.number)).length;
+        const chosen = chapter.sections.filter((s) => selected.has(s.key)).length;
         return (
           <View key={chapter.title} style={styles.chapter}>
             <Pressable
@@ -160,19 +162,17 @@ export default function CatalogSetScreen() {
             </Pressable>
             {chapter.sections.map((section) => (
               <Pressable
-                key={section.number}
+                key={section.key}
                 accessibilityRole="checkbox"
-                accessibilityState={{ checked: selected.has(section.number) }}
+                accessibilityState={{ checked: selected.has(section.key) }}
                 style={[styles.row, styles.section, { borderColor: theme.border }]}
                 onPress={() => toggle([section])}>
-                {check(selected.has(section.number))}
+                {check(selected.has(section.key))}
                 <View style={styles.flex}>
-                  <ThemedText>
-                    §{section.number}. {section.title}
-                  </ThemedText>
+                  <ThemedText>{sectionLabel(section)}</ThemedText>
                   <ThemedText type="small" themeColor="textSecondary">
                     {section.cards.length} {cardsWord(section.cards.length).replace('карточку', 'карточка')}
-                    {loaded.has(section.number) ? ' · уже в стопке' : ''}
+                    {loaded.has(section.key) ? ' · уже в стопке' : ''}
                   </ThemedText>
                 </View>
               </Pressable>
