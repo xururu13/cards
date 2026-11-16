@@ -6,6 +6,8 @@
     "@expo/ui": "~58.0.28",
     "expo": "~58.0.25",
     "expo-constants": "~58.0.16",
+    "expo-crypto": "~58.0.8",
+    "expo-dev-client": "~58.0.20",
     "expo-device": "~58.0.5",
     "expo-font": "~58.0.12",
     "expo-glass-effect": "~58.0.5",
@@ -13,6 +15,7 @@
     "expo-linking": "~58.0.17",
     "expo-router": "~58.0.31",
     "expo-splash-screen": "~58.0.14",
+    "expo-sqlite": "~58.0.17",
     "expo-status-bar": "~58.0.5",
     "expo-symbols": "~58.0.5",
     "expo-system-ui": "~58.0.7",
@@ -28,16 +31,28 @@
     "react-native-worklets": "0.13.0"
   },
   "devDependencies": {
+    "@types/jest": "30.0.0",
+    "@types/node": "^26.6.6",
     "@types/react": "~19.3.0",
+    "eslint": "^9.0.0",
+    "eslint-config-expo": "~58.0.4",
+    "jest": "~30.5.2",
+    "jest-expo": "~58.0.14",
     "typescript": "~6.0.3"
   },
   "scripts": {
-    "start": "expo start",
-    "reset-project": "node ./scripts/reset-project.js",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
-    "web": "expo start --web",
-    "lint": "expo lint"
+    "start": "expo start --dev-client",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "lint": "expo lint",
+    "typecheck": "tsc --noEmit",
+    "test": "jest"
   },
-  "private": true
+  "private": true,
+  "jest": {
+    "preset": "jest-expo"
+  },
+  "engines": {
+    "node": "^22.13.0 || ^24.3.0"
+  }
 }

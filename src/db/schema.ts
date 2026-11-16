@@ -1,0 +1,69 @@
+/**
+ * Миграции базы. Индекс в массиве + 1 = версия схемы (PRAGMA user_version).
+ * Уже выпущенные миграции не редактируются — изменения добавляются новой записью.
+ *
+ * Общие правила схемы (нужны для синхронизации через Google Drive):
+ * - id — UUID, чтобы записи с разных устройств не конфликтовали;
+ * - updated_at — время последней правки, мс; при слиянии побеждает более поздняя;
+ * - deleted_at — отметка удаления; строки не удаляются физически, иначе
+ *   удаление не дойдёт до другого устройства.
+ */
+export const MIGRATIONS: readonly string[] = [
+  `
+  CREATE TABLE decks (
+    id TEXT PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL,
+    front_lang TEXT NOT NULL DEFAULT 'ru-RU',
+    back_lang TEXT NOT NULL DEFAULT 'ru-RU',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    deleted_at INTEGER
+  );
+
+  CREATE TABLE cards (
+    id TEXT PRIMARY KEY NOT NULL,
+    deck_id TEXT NOT NULL REFERENCES decks(id),
+    front TEXT NOT NULL,
+    back TEXT NOT NULL,
+    level INTEGER NOT NULL DEFAULT 0 CHECK (level BETWEEN 0 AND 4),
+    correct_count INTEGER NOT NULL DEFAULT 0,
+    wrong_count INTEGER NOT NULL DEFAULT 0,
+    last_shown_at INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    deleted_at INTEGER
+  );
+  CREATE INDEX cards_deck ON cards(deck_id);
+
+  CREATE TABLE rounds (
+    id TEXT PRIMARY KEY NOT NULL,
+    deck_id TEXT NOT NULL REFERENCES decks(id),
+    started_at INTEGER NOT NULL,
+    finished_at INTEGER,
+    correct INTEGER NOT NULL DEFAULT 0,
+    wrong INTEGER NOT NULL DEFAULT 0,
+    hints INTEGER NOT NULL DEFAULT 0,
+    score INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL,
+    deleted_at INTEGER
+  );
+  CREATE INDEX rounds_finished ON rounds(finished_at);
+
+  CREATE TABLE answers (
+    id TEXT PRIMARY KEY NOT NULL,
+    round_id TEXT NOT NULL REFERENCES rounds(id),
+    card_id TEXT NOT NULL REFERENCES cards(id),
+    result TEXT NOT NULL CHECK (result IN ('correct', 'wrong', 'hint', 'timeout')),
+    time_ms INTEGER NOT NULL,
+    points INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX answers_round ON answers(round_id);
+
+  CREATE TABLE settings (
+    key TEXT PRIMARY KEY NOT NULL,
+    value TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  `,
+];
