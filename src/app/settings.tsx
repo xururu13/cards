@@ -197,8 +197,8 @@ export default function SettingsScreen() {
         />
         <ThemedText type="small" themeColor="textSecondary">
           {settings.timerSeconds === 0
-            ? 'Без таймера нет бонуса за скорость.'
-            : 'Когда время выходит, оборот открывается сам и снимается 5 очков.'}
+            ? 'Без таймера нет бонуса за скорость. Оценки 0 и 1 дают 0 очков. Оценки 2–5 дают 2, 5, 8, 10 очков.'
+            : 'Быстрый ответ на 4–5: до +5 очков. Время вышло: −2. Повтор: половина базовых очков без бонуса.'}
         </ThemedText>
         <FieldLabel>Карточек в раунде</FieldLabel>
         <OptionChips

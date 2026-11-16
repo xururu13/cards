@@ -11,6 +11,7 @@ import { useTheme } from '@/hooks/use-theme';
 
 type Props = {
   front: string;
+  frontContent?: React.ReactNode;
   back: string;
   /** Подпись под словом на лицевой стороне. */
   caption: string;
@@ -22,7 +23,7 @@ type Props = {
   reducedMotion: boolean;
 };
 
-export function FlipCard({ front, back, caption, label, flip, reducedMotion }: Props) {
+export function FlipCard({ front, frontContent, back, caption, label, flip, reducedMotion }: Props) {
   const theme = useTheme();
 
   const frontStyle = useAnimatedStyle(() =>
@@ -52,19 +53,29 @@ export function FlipCard({ front, back, caption, label, flip, reducedMotion }: P
       {label}
     </ThemedText>
   ) : null;
+  const question = (
+    <>
+      <ThemedText type="subtitle" style={styles.center} adjustsFontSizeToFit numberOfLines={4}>
+        {front}
+      </ThemedText>
+      <ThemedText type="small" themeColor="textSecondary" style={styles.center}>
+        {caption}
+      </ThemedText>
+    </>
+  );
 
   return (
     <View style={styles.container}>
-      <Animated.View style={[face, frontStyle]}>
+      <Animated.View style={[face, frontStyle]} pointerEvents={frontContent ? 'auto' : 'none'}>
         {badge}
-        <ThemedText type="subtitle" style={styles.center} adjustsFontSizeToFit numberOfLines={4}>
-          {front}
-        </ThemedText>
-        <ThemedText type="small" themeColor="textSecondary" style={styles.center}>
-          {caption}
-        </ThemedText>
+        {frontContent ? (
+          <ScrollView style={styles.answerScroll} contentContainerStyle={styles.answerContent} keyboardShouldPersistTaps="handled">
+            {question}
+            {frontContent}
+          </ScrollView>
+        ) : question}
       </Animated.View>
-      <Animated.View style={[face, backStyle]}>
+      <Animated.View style={[face, backStyle]} pointerEvents={frontContent ? 'none' : 'auto'}>
         {badge}
         <ThemedText type="small" themeColor="textSecondary" style={styles.center} numberOfLines={2}>
           {front}
@@ -79,6 +90,8 @@ export function FlipCard({ front, back, caption, label, flip, reducedMotion }: P
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  answerScroll: { alignSelf: 'stretch', flex: 1, marginTop: Spacing.three },
+  answerContent: { flexGrow: 1, justifyContent: 'center', gap: Spacing.three, paddingBottom: Spacing.two },
   face: {
     position: 'absolute',
     top: 0,

@@ -1,7 +1,7 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
-import { Alert, BackHandler, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Alert, BackHandler, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, {
   cancelAnimation,
   Easing,
@@ -13,10 +13,13 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { listDecks } from '@/db/decks';
 import { Button } from '@/components/button';
 import { FlipCard } from '@/components/flip-card';
+import { FormError } from '@/components/form';
 import { HeaderIcon } from '@/components/header-icon';
 import { StatusScreen } from '@/components/status-screen';
+import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
@@ -25,6 +28,8 @@ import { listMissedCardIds, saveRound } from '@/db/rounds';
 import { getSettings } from '@/db/settings';
 import type { Card } from '@/db/types';
 import { useTheme } from '@/hooks/use-theme';
+import { useVoiceAnswer } from '@/hooks/use-voice-answer';
+import type { Evaluation } from '@/ai/grade';
 import { pickRoundCards, shuffle } from '@/round/picking';
 import { formatDelta } from '@/round/format';
 import { ALL_DECKS } from '@/round/mixed';
@@ -39,6 +44,7 @@ export default function RoundScreen() {
   const db = useSQLiteContext();
   const mixed = deckId === ALL_DECKS;
   const [round, setRound] = useState<{
+    languages: Record<string, string>;
     cards: Card[];
     timeLimitMs: number | null;
     deckNames: Record<string, string> | null;
@@ -49,6 +55,7 @@ export default function RoundScreen() {
   useEffect(() => {
     let active = true;
     (async () => {
+      const languages = Object.fromEntries((await listDecks(db)).map(d => [d.id, d.back_lang]));
       const settings = await getSettings(db);
       const withDecks = mixed ? await listAllCards(db) : null;
       const all = withDecks ?? (await listCards(db, deckId));
@@ -56,10 +63,10 @@ export default function RoundScreen() {
       // В смешанном раунде на карточке подписано, из какой она стопки.
       const deckNames = withDecks && Object.fromEntries(withDecks.map((card) => [card.deck_id, card.deck_name]));
       if (!fromRound) {
-        return { cards: pickRoundCards(all, settings.roundSize, Date.now()), timeLimitMs, deckNames };
+        return { languages, cards: pickRoundCards(all, settings.roundSize, Date.now()), timeLimitMs, deckNames };
       }
       const missed = new Set((await listMissedCardIds(db, fromRound)).map((row) => row.id));
-      return { cards: shuffle(all.filter((card) => missed.has(card.id))), timeLimitMs, deckNames };
+      return { languages, cards: shuffle(all.filter((card) => missed.has(card.id))), timeLimitMs, deckNames };
     })()
       .then((loaded) => active && setRound(loaded))
       .catch((e: unknown) => active && setError(e instanceof Error ? e.message : String(e)));
@@ -77,6 +84,7 @@ export default function RoundScreen() {
     <RoundPlay
       deckId={mixed ? null : deckId}
       cards={round.cards}
+      languages={round.languages}
       timeLimitMs={round.timeLimitMs}
       deckNames={round.deckNames}
     />
@@ -84,6 +92,7 @@ export default function RoundScreen() {
 }
 
 type RoundPlayProps = {
+  languages: Record<string, string>;
   /** null — смешанный раунд. */
   deckId: string | null;
   cards: Card[];
@@ -92,7 +101,7 @@ type RoundPlayProps = {
   deckNames: Record<string, string> | null;
 };
 
-function RoundPlay({ deckId, cards, timeLimitMs, deckNames }: RoundPlayProps) {
+function RoundPlay({ deckId, cards, timeLimitMs, deckNames, languages }: RoundPlayProps) {
   const db = useSQLiteContext();
   const router = useRouter();
   const theme = useTheme();
@@ -117,14 +126,26 @@ function RoundPlay({ deckId, cards, timeLimitMs, deckNames }: RoundPlayProps) {
 
   const transitioning = shownIndex !== session.index;
   const asking = session.phase === 'question' && !transitioning;
+  const speaking = session.phase === 'voice';
+  const item = session.queue[shownIndex];
+  const onEvaluation = useCallback((result: Evaluation) => {
+    dispatch({ type: 'graded', index: shownIndex, ...result });
+  }, [shownIndex]);
+  const voice = useVoiceAnswer({
+    enabled: speaking,
+    question: item.card.front,
+    reference: item.card.back,
+    language: languages[item.card.deck_id] ?? 'ru-RU',
+    onResult: onEvaluation,
+  });
 
   // Таймер вопроса: полоса убывает плавно, число обновляется несколько раз в секунду.
   useEffect(() => {
     if (!asking) return;
-    questionStart.current = Date.now();
+    questionStart.current = Date.now() - session.revealTimeMs;
     if (!timeLimitMs) return;
-    timer.value = 1;
-    timer.value = withTiming(0, { duration: timeLimitMs, easing: Easing.linear });
+    timer.value = Math.max(0, 1 - session.revealTimeMs / timeLimitMs);
+    timer.value = withTiming(0, { duration: Math.max(0, timeLimitMs - session.revealTimeMs), easing: Easing.linear });
     const interval = setInterval(() => {
       const left = timeLimitMs - (Date.now() - questionStart.current);
       setRemainingMs(Math.max(0, left));
@@ -134,7 +155,7 @@ function RoundPlay({ deckId, cards, timeLimitMs, deckNames }: RoundPlayProps) {
       clearInterval(interval);
       cancelAnimation(timer);
     };
-  }, [asking, shownIndex, timer, timeLimitMs]);
+  }, [asking, shownIndex, timer, timeLimitMs, session.revealTimeMs]);
 
   // Переворот при открытии оборота.
   useEffect(() => {
@@ -197,7 +218,6 @@ function RoundPlay({ deckId, cards, timeLimitMs, deckNames }: RoundPlayProps) {
   }));
   const timerStyle = useAnimatedStyle(() => ({ width: `${timer.value * 100}%` }));
 
-  const item = session.queue[shownIndex];
   const total = session.queue.length;
   const lastAnswer = session.answers.at(-1);
   const seconds = Math.ceil(remainingMs / 1000);
@@ -225,17 +245,35 @@ function RoundPlay({ deckId, cards, timeLimitMs, deckNames }: RoundPlayProps) {
         {formatDelta(lastAnswer.points)} очк.
       </ThemedText>
     );
-  } else if (session.phase === 'question') {
+  } else if (session.phase === 'question' || speaking) {
     controls = (
-      <>
-        <Button title="Проверить" variant="primary" onPress={() => reveal('check')} />
-        <Button
-          title={`Подсказка ${formatDelta(POINTS.penalty)}`}
-          icon="bulb-outline"
-          onPress={() => reveal('hint')}
-        />
-      </>
+      <View style={styles.rate}>
+        <View style={styles.flex}>
+          <Button
+            title={speaking ? 'Оценить' : 'Ответить'}
+            variant="primary"
+            icon={voice.listening ? 'mic' : 'mic-outline'}
+            pulse={speaking && !voice.submitting && !voice.preparing && (voice.listening || !!voice.text.trim())}
+            disabled={speaking && (voice.submitting || voice.preparing)}
+            accessibilityState={{ busy: speaking && voice.submitting }}
+            accessibilityHint={speaking ? 'Завершает диктовку и отправляет ответ на оценку' : undefined}
+            onPress={speaking ? voice.evaluate : () => {
+              dispatch({ type: 'voice', timeMs: Date.now() - questionStart.current });
+              voice.start();
+            }}
+          />
+        </View>
+        <View style={styles.flex}>
+          <Button title="Проверить" variant="secondary" onPress={() => reveal('check')} />
+        </View>
+      </View>
     );
+  } else if (session.reveal === 'voice' && session.evaluation) {
+    controls = <>
+      <ThemedText type="smallBold">Оценка: {session.evaluation.grade} из 5</ThemedText>
+      <ThemedText type="small">{session.evaluation.feedback}</ThemedText>
+      <Button title="Дальше" variant="primary" onPress={() => dispatch({ type: 'continue' })} />
+    </>;
   } else if (session.reveal === 'check') {
     controls = (
       <View style={styles.rate}>
@@ -262,7 +300,7 @@ function RoundPlay({ deckId, cards, timeLimitMs, deckNames }: RoundPlayProps) {
       <>
         <ThemedText type="small" themeColor="textSecondary" style={styles.center}>
           {session.reveal === 'timeout' ? 'Время вышло' : 'Открыто по подсказке'} ·{' '}
-          {formatDelta(POINTS.penalty)}
+          {formatDelta(session.reveal === 'timeout' ? POINTS.timeout : POINTS.penalty)}
         </ThemedText>
         <Button title="Дальше" variant="primary" onPress={() => dispatch({ type: 'continue' })} />
       </>
@@ -297,7 +335,7 @@ function RoundPlay({ deckId, cards, timeLimitMs, deckNames }: RoundPlayProps) {
         />
       </View>
       {timeLimitMs !== null && (
-      <View style={[styles.timerRow, !asking && styles.hidden]}>
+      <View style={[styles.timerRow, !asking && !speaking && styles.hidden]}>
         <View style={[styles.track, styles.flex, { backgroundColor: theme.backgroundSelected }]}>
           <Animated.View
             style={[
@@ -315,9 +353,24 @@ function RoundPlay({ deckId, cards, timeLimitMs, deckNames }: RoundPlayProps) {
         </ThemedText>
       </View>
       )}
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={insets.top + 56}>
       <Animated.View style={[styles.flex, slideStyle]}>
         <FlipCard
           front={item.card.front}
+          frontContent={speaking ? (
+            <>
+              <TextField
+                accessibilityLabel="Распознанный ответ"
+                value={voice.text}
+                onChangeText={voice.setText}
+                multiline
+                maxLength={2000}
+                editable={voice.editable}
+                placeholder="Твой ответ…"
+              />
+              <FormError message={voice.error} />
+            </>
+          ) : undefined}
           back={item.card.back}
           caption={item.repeat ? 'Повтор после ошибки. Вспомни, что на обороте' : 'Вспомни, что на обороте'}
           label={deckNames?.[item.card.deck_id]}
@@ -325,7 +378,8 @@ function RoundPlay({ deckId, cards, timeLimitMs, deckNames }: RoundPlayProps) {
           reducedMotion={reducedMotion}
         />
       </Animated.View>
-      <View style={styles.controls}>{controls}</View>
+      </KeyboardAvoidingView>
+      {controls && <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: 240, flexGrow: 0 }} contentContainerStyle={styles.controls}>{controls}</ScrollView>}
     </ThemedView>
   );
 }

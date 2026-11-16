@@ -1,5 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useEffect } from 'react';
 import { Pressable, StyleSheet, type PressableProps } from 'react-native';
+import Animated, { cancelAnimation, useAnimatedStyle, useReducedMotion, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
 
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
@@ -9,9 +11,22 @@ type ButtonProps = Omit<PressableProps, 'children' | 'style'> & {
   title: string;
   variant?: 'primary' | 'secondary' | 'danger' | 'success';
   icon?: React.ComponentProps<typeof Ionicons>['name'];
+  pulse?: boolean;
 };
 
-export function Button({ title, variant = 'secondary', icon, ...rest }: ButtonProps) {
+function PulseHighlight() {
+  const reducedMotion = useReducedMotion();
+  const opacity = useSharedValue(1);
+  useEffect(() => {
+    if (reducedMotion) return;
+    opacity.value = withRepeat(withTiming(0.12, { duration: 650 }), -1, true);
+    return () => cancelAnimation(opacity);
+  }, [opacity, reducedMotion]);
+  const style = useAnimatedStyle(() => ({ opacity: opacity.value }));
+  return <Animated.View pointerEvents="none" style={[styles.highlight, style]} />;
+}
+
+export function Button({ title, variant = 'secondary', icon, pulse, ...rest }: ButtonProps) {
   const theme = useTheme();
   const primary = variant === 'primary';
   const color = primary
@@ -29,9 +44,11 @@ export function Button({ title, variant = 'secondary', icon, ...rest }: ButtonPr
         primary
           ? { backgroundColor: theme.accent, borderColor: theme.accent }
           : { borderColor: variant === 'secondary' ? theme.border : color },
+        pulse && styles.pulseBase,
         pressed && styles.pressed,
       ]}
       {...rest}>
+      {pulse && <PulseHighlight />}
       {icon && <Ionicons name={icon} size={20} color={color} />}
       <ThemedText style={{ color }}>{title}</ThemedText>
     </Pressable>
@@ -48,6 +65,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: Spacing.three,
+  },
+  pulseBase: { backgroundColor: '#183A9E', borderColor: '#183A9E' },
+  highlight: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: '#2B63DC',
+    borderColor: '#B6DFFF',
+    borderRadius: 11,
+    borderWidth: 3,
   },
   pressed: { opacity: 0.7 },
 });

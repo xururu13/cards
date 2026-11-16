@@ -1,4 +1,5 @@
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from 'expo-speech-recognition';
+import { AppState } from 'react-native';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 const ERROR_TEXT: Record<string, string> = {
@@ -17,7 +18,9 @@ const ERROR_TEXT: Record<string, string> = {
 export function useDictation<Target extends string>(onText: (target: Target, text: string) => void) {
   const [target, setTarget] = useState<Target | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const request = useRef<symbol | null>(null);
   const targetRef = useRef<Target | null>(null);
+  const [listening, setListening] = useState(false);
   const onTextRef = useRef(onText);
   useEffect(() => {
     onTextRef.current = onText;
@@ -26,14 +29,21 @@ export function useDictation<Target extends string>(onText: (target: Target, tex
   const finish = useCallback(() => {
     targetRef.current = null;
     setTarget(null);
+    setListening(false);
   }, []);
 
+  useSpeechRecognitionEvent('start', () => {
+    if (targetRef.current) setListening(true);
+  });
   useSpeechRecognitionEvent('result', (event) => {
     const text = event.results[0]?.transcript;
     if (targetRef.current && text) onTextRef.current(targetRef.current, text);
   });
-  useSpeechRecognitionEvent('end', finish);
+  useSpeechRecognitionEvent('end', () => {
+    if (targetRef.current) finish();
+  });
   useSpeechRecognitionEvent('error', (event) => {
+    if (!targetRef.current) return;
     // «aborted» приходит, когда диктовку остановили мы сами.
     if (event.error !== 'aborted') {
       setError(ERROR_TEXT[event.error] ?? 'Не получилось распознать речь. Попробуй ещё раз.');
@@ -41,22 +51,53 @@ export function useDictation<Target extends string>(onText: (target: Target, tex
     finish();
   });
 
-  useEffect(() => () => ExpoSpeechRecognitionModule.abort(), []);
+  const abort = useCallback(() => {
+    request.current = null;
+    const wasActive = targetRef.current !== null;
+    targetRef.current = null;
+    if (wasActive) ExpoSpeechRecognitionModule.abort();
+  }, []);
+
+  const cancel = useCallback(() => {
+    abort();
+    finish();
+  }, [abort, finish]);
+
+  useEffect(() => abort, [abort]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', state => { if (state !== 'active' && targetRef.current) ExpoSpeechRecognitionModule.stop(); });
+    return () => sub.remove();
+  }, []);
 
   const stop = useCallback(() => ExpoSpeechRecognitionModule.stop(), []);
 
   const start = useCallback(async (next: Target, lang: string) => {
-    setError(null);
-    if (targetRef.current) ExpoSpeechRecognitionModule.abort();
-    const permission = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
-    if (!permission.granted) {
-      setError(ERROR_TEXT['not-allowed']);
-      return;
+    if (request.current || targetRef.current) return;
+    const token = Symbol();
+    request.current = token;
+    try {
+      setError(null);
+      setTarget(next);
+      const permission = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+      if (request.current !== token) return;
+      if (!permission.granted) {
+        finish();
+        setError(ERROR_TEXT['not-allowed']);
+        return;
+      }
+      targetRef.current = next;
+      setTarget(next);
+      ExpoSpeechRecognitionModule.start({ lang, interimResults: true, continuous: false });
+    } catch {
+      if (request.current === token) {
+        setError('Не удалось включить микрофон. Попробуй ещё раз.');
+        finish();
+      }
+    } finally {
+      if (request.current === token) request.current = null;
     }
-    targetRef.current = next;
-    setTarget(next);
-    ExpoSpeechRecognitionModule.start({ lang, interimResults: true, continuous: false });
-  }, []);
+  }, [finish]);
 
-  return { target, error, start, stop };
+  return { target, listening, error, start, stop, cancel };
 }

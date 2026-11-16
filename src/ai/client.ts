@@ -53,6 +53,7 @@ export async function chat(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let response: Response;
+  let body: string;
   try {
     response = await fetchImpl(`${config.baseUrl}/chat/completions`, {
       method: 'POST',
@@ -63,6 +64,7 @@ export async function chat(
       body: JSON.stringify({ model: config.model, messages, temperature, max_tokens: 2000 }),
       signal: controller.signal,
     });
+    body = await response.text();
   } catch {
     throw new AiError(
       controller.signal.aborted
@@ -72,7 +74,6 @@ export async function chat(
   } finally {
     clearTimeout(timer);
   }
-  const body = await response.text();
   if (!response.ok) throw errorFor(response.status, body);
   let text: unknown;
   try {

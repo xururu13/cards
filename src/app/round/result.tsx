@@ -57,6 +57,7 @@ export default function RoundResultScreen() {
 
   const { round, answers, stats, previousBest } = data;
   const missed = missedCards(answers);
+  const graded = answers.filter(a => a.grade !== null);
   const isRecord = round.score > 0 && round.score > previousBest;
   const counters = [
     { label: 'Верно', value: round.correct, color: theme.success },
@@ -89,6 +90,10 @@ export default function RoundResultScreen() {
                 За сегодня {stats.today} · рекорд дня {stats.bestDay}
               </ThemedText>
             </View>
+            {graded.length > 0 && <View style={{ gap: 8 }}>
+              <ThemedText type="smallBold">Оценки ответов</ThemedText>
+              {graded.map((a, i) => <ThemedText type="small" key={`${a.card_id}-${i}`}>{a.front}: {a.grade}/5 · {a.points} очк.</ThemedText>)}
+            </View>}
             <View style={styles.counters}>
               {counters.map((counter) => (
                 <View

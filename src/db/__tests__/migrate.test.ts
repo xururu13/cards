@@ -106,6 +106,24 @@ describe('migrate', () => {
     expect(raw.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name = 'rounds_finished'").get()).toEqual({ n: 1 });
   });
 
+  it('миграция 6 сохраняет старые оценки и разрешает ноль', async () => {
+    const { raw, db } = openMemoryDb();
+    await migrate(db, MIGRATIONS.slice(0, 5));
+    raw.exec(`
+      INSERT INTO decks (id, name, created_at, updated_at) VALUES ('d', 'Био', 0, 0);
+      INSERT INTO cards (id, deck_id, front, back, created_at, updated_at) VALUES ('c', 'd', 'Вопрос', 'Ответ', 0, 0);
+      INSERT INTO rounds (id, deck_id, started_at, updated_at) VALUES ('r', 'd', 0, 0);
+      INSERT INTO answers (id, round_id, card_id, result, time_ms, points, created_at, grade)
+        VALUES ('a', 'r', 'c', 'wrong', 0, 0, 0, 1);
+    `);
+
+    await migrate(db);
+    expect(raw.prepare("SELECT grade FROM answers WHERE id = 'a'").get()).toEqual({ grade: 1 });
+    raw.exec("UPDATE answers SET grade = 0 WHERE id = 'a'");
+    expect(raw.prepare("SELECT grade FROM answers WHERE id = 'a'").get()).toEqual({ grade: 0 });
+    expect(() => raw.exec("UPDATE answers SET grade = -1 WHERE id = 'a'")).toThrow();
+  });
+
   it('после миграций ссылки снова проверяются', async () => {
     const { raw, db } = openMemoryDb();
     await migrate(db);

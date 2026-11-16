@@ -57,10 +57,10 @@ describe('раунды', () => {
       score: 10,
     });
     expect(result?.answers).toEqual([
-      { card_id: dog, front: 'dog', back: 'собака', result: 'correct', points: 15 },
-      { card_id: cat, front: 'cat', back: 'кот', result: 'hint', points: -5 },
-      { card_id: fox, front: 'fox', back: 'лиса', result: 'timeout', points: -5 },
-      { card_id: cat, front: 'cat', back: 'кот', result: 'correct', points: 5 },
+      { grade: null, card_id: dog, front: 'dog', back: 'собака', result: 'correct', points: 15 },
+      { grade: null, card_id: cat, front: 'cat', back: 'кот', result: 'hint', points: -5 },
+      { grade: null, card_id: fox, front: 'fox', back: 'лиса', result: 'timeout', points: -5 },
+      { grade: null, card_id: cat, front: 'cat', back: 'кот', result: 'correct', points: 5 },
     ]);
   });
 

@@ -6,6 +6,7 @@ import { newId } from './ids';
 import type { AnswerResult, Round } from './types';
 
 export interface RoundAnswer {
+  grade: number | null;
   card_id: string;
   front: string;
   back: string;
@@ -42,9 +43,9 @@ export async function saveRound(
     );
     for (const answer of answers) {
       await db.runAsync(
-        `INSERT INTO answers (id, round_id, card_id, result, time_ms, points, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [newId(), roundId, answer.cardId, answer.result, Math.round(answer.timeMs), answer.points, now],
+        `INSERT INTO answers (id, round_id, card_id, result, time_ms, points, created_at, grade)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [newId(), roundId, answer.cardId, answer.result, Math.round(answer.timeMs), answer.points, now, answer.grade ?? null],
       );
     }
 
@@ -78,7 +79,7 @@ export async function getRoundResult(db: Db, roundId: string): Promise<RoundResu
   );
   if (!round) return null;
   const answers = await db.getAllAsync<RoundAnswer>(
-    `SELECT a.card_id, c.front, c.back, a.result, a.points
+    `SELECT a.card_id, c.front, c.back, a.result, a.points, a.grade
        FROM answers a JOIN cards c ON c.id = a.card_id
       WHERE a.round_id = ?
       ORDER BY a.rowid`,

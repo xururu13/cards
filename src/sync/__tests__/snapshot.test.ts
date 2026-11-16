@@ -149,3 +149,18 @@ describe('parseSnapshot', () => {
     expect(await listDecks(target.db)).toEqual([]);
   });
 });
+
+it.each([0, 4] as const)('оценка %s сохраняется в базе и переносится на другое устройство', async (grade) => {
+  const { phone, tablet, deckId, dog } = await twoDevices();
+  await saveRound(phone.db, deckId, 300, [{ cardId: dog, result: grade === 0 ? 'wrong' : 'correct', grade, points: grade === 0 ? 0 : 12, timeMs: 6000, repeat: false }], 400);
+  const copy = await roundTrip(phone);
+  expect(copy.answers.at(-1)?.grade).toBe(grade);
+  await mergeSnapshot(tablet.db, copy);
+  expect((await exportSnapshot(tablet.db)).answers.at(-1)?.grade).toBe(grade);
+});
+it('резервная копия версии 1 получает пустые оценки', async () => {
+  const { phone } = await twoDevices();
+  const copy = await exportSnapshot(phone.db);
+  const old = { ...copy, version: 1, answers: copy.answers.map(({ grade, ...rest }) => rest) };
+  expect(parseSnapshot(JSON.stringify(old)).answers[0].grade).toBeNull();
+});

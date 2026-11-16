@@ -1,9 +1,9 @@
 import type { AnswerResult, Card } from '@/db/types';
 
-import { scoreAnswer } from './scoring';
+import { isGrade, scoreAnswer, type Grade } from './scoring';
 
 /** Как открыли оборот: сам проверил, взял подсказку или вышло время. */
-export type Reveal = 'check' | 'hint' | 'timeout';
+export type Reveal = 'check' | 'hint' | 'timeout' | 'voice';
 
 export interface QueueItem {
   card: Card;
@@ -13,6 +13,7 @@ export interface QueueItem {
 
 export interface SessionAnswer {
   cardId: string;
+  grade?: Grade;
   result: AnswerResult;
   /** Сколько думал до открытия оборота. */
   timeMs: number;
@@ -24,7 +25,8 @@ export interface SessionAnswer {
 export interface Session {
   queue: QueueItem[];
   index: number;
-  phase: 'question' | 'answer';
+  phase: 'question' | 'voice' | 'answer';
+  evaluation?: { grade: Grade; feedback: string };
   /** Задано в фазе «answer». */
   reveal: Reveal | null;
   revealTimeMs: number;
@@ -37,7 +39,10 @@ export interface Session {
 }
 
 export type SessionAction =
-  | { type: 'reveal'; by: Reveal; timeMs: number }
+  | { type: 'voice'; timeMs: number }
+  | { type: 'cancelVoice' }
+  | { type: 'graded'; index: number; grade: Grade; feedback: string }
+  | { type: 'reveal'; by: Exclude<Reveal, 'voice'>; timeMs: number }
   /** Самооценка после «Проверить». */
   | { type: 'rate'; correct: boolean }
   /** «Дальше» после подсказки или истёкшего времени. */
@@ -49,6 +54,7 @@ export function startSession(cards: readonly Card[], timeLimitMs: number | null)
     index: 0,
     phase: 'question',
     reveal: null,
+    evaluation: undefined,
     revealTimeMs: 0,
     answers: [],
     score: 0,
@@ -66,6 +72,7 @@ function record(session: Session, result: AnswerResult): Session {
   const item = session.queue[session.index];
   const raw = scoreAnswer({
     result,
+    grade: session.evaluation?.grade,
     timeMs: session.revealTimeMs,
     timeLimitMs: session.timeLimitMs,
     streak: session.streak,
@@ -81,11 +88,13 @@ function record(session: Session, result: AnswerResult): Session {
     index: session.index + 1,
     phase: 'question',
     reveal: null,
+    evaluation: undefined,
     revealTimeMs: 0,
     answers: [
       ...session.answers,
       {
         cardId: item.card.id,
+        ...(session.evaluation && { grade: session.evaluation.grade }),
         result,
         timeMs: session.revealTimeMs,
         points: score - session.score,
@@ -101,7 +110,20 @@ function record(session: Session, result: AnswerResult): Session {
 export function sessionReducer(session: Session, action: SessionAction): Session {
   if (isFinished(session)) return session;
   switch (action.type) {
+    case 'voice':
+      if (session.phase !== 'question') return session;
+      return { ...session, phase: 'voice', revealTimeMs: Math.max(0, action.timeMs) };
+    case 'cancelVoice':
+      if (session.phase !== 'voice') return session;
+      return { ...session, phase: 'question' };
+    case 'graded':
+      if (session.phase !== 'voice' || action.index !== session.index || !isGrade(action.grade)) return session;
+      return { ...session, phase: 'answer', reveal: 'voice', evaluation: { grade: action.grade, feedback: action.feedback } };
+
     case 'reveal':
+      if (session.phase === 'voice' && action.by === 'check') {
+        return { ...session, phase: 'answer', reveal: 'check' };
+      }
       if (session.phase !== 'question') return session;
       return { ...session, phase: 'answer', reveal: action.by, revealTimeMs: action.timeMs };
     case 'rate':
@@ -109,6 +131,7 @@ export function sessionReducer(session: Session, action: SessionAction): Session
       return record(session, action.correct ? 'correct' : 'wrong');
     case 'continue':
       if (session.phase !== 'answer' || session.reveal === 'check' || !session.reveal) return session;
+      if (session.reveal === 'voice') return record(session, session.evaluation!.grade >= 4 ? 'correct' : 'wrong');
       return record(session, session.reveal);
   }
 }

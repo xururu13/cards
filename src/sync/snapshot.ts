@@ -1,8 +1,9 @@
 import type { Db, SqlValue } from '@/db/db';
 import type { Answer, Card, Deck, Round } from '@/db/types';
+import { isGrade } from '@/round/scoring';
 
 export const SNAPSHOT_FORMAT = 'kartochki-backup';
-export const SNAPSHOT_VERSION = 1;
+export const SNAPSHOT_VERSION = 2;
 
 export interface SettingRow {
   key: string;
@@ -61,6 +62,7 @@ const TABLES = {
     deleted_at: 'number?',
   },
   answers: {
+    grade: 'number?',
     id: 'string',
     round_id: 'string',
     card_id: 'string',
@@ -113,11 +115,15 @@ export function parseSnapshot(json: string): Snapshot {
   if (typeof object.version !== 'number' || object.version > SNAPSHOT_VERSION) {
     throw new Error('Копия сделана более новой версией приложения. Обнови приложение.');
   }
+  if (object.version === 1 && Array.isArray(object.answers)) {
+    object.answers = object.answers.map((row) => ({ ...row, grade: null }));
+  }
   for (const table of ORDER) {
     const rows = object[table];
     if (!Array.isArray(rows)) throw new Error(`Файл повреждён: нет раздела ${table}.`);
     const fields = Object.entries(TABLES[table]) as [string, FieldType][];
     rows.forEach((row: Record<string, unknown> | null, index) => {
+      if (table === 'answers' && row && row.grade !== null && !isGrade(row.grade)) throw new Error('Файл повреждён: недопустимая оценка ответа.');
       const broken = !row || fields.find(([field, type]) => !matches(row[field], type));
       if (broken) {
         const field = Array.isArray(broken) ? `, поле ${broken[0]}` : '';

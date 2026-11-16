@@ -38,7 +38,7 @@ describe('sessionReducer', () => {
     expect(s).toMatchObject({ index: 0, phase: 'answer', reveal: 'check', answers: [], score: 0 });
   });
 
-  it('начисляет очки с бонусами за скорость и серию', () => {
+  it('начисляет бонус за скорость без бонуса за серию', () => {
     const s = play(
       startSession([card('a'), card('b'), card('c')], LIMIT),
       check(0), // 10 + 5 за скорость
@@ -48,8 +48,8 @@ describe('sessionReducer', () => {
       check(LIMIT), // 10 + 0 + 4 за серию
       right,
     );
-    expect(s.answers.map((a) => a.points)).toEqual([15, 15, 14]);
-    expect(s.score).toBe(44);
+    expect(s.answers.map((a) => a.points)).toEqual([15, 13, 10]);
+    expect(s.score).toBe(38);
     expect(s.streak).toBe(3);
     expect(isFinished(s)).toBe(true);
   });
@@ -73,7 +73,7 @@ describe('sessionReducer', () => {
     expect(isFinished(missedAgain)).toBe(true);
   });
 
-  it('подсказка и истёкшее время снимают 5 очков, но счёт не уходит ниже нуля', () => {
+  it('подсказка и истёкшее время штрафуются, но счёт не уходит ниже нуля', () => {
     const s = play(
       startSession([card('a'), card('b'), card('c')], LIMIT),
       hint, // счёт 0 → 0
@@ -86,9 +86,9 @@ describe('sessionReducer', () => {
     expect(s.answers.map((a) => [a.result, a.points])).toEqual([
       ['hint', 0],
       ['correct', 10],
-      ['timeout', -5],
+      ['timeout', -2],
     ]);
-    expect(s.score).toBe(5);
+    expect(s.score).toBe(8);
     expect(s.answers.reduce((sum, a) => sum + a.points, 0)).toBe(s.score);
     // Обе пропущенные карточки вернулись в конец.
     expect(s.queue.slice(3).map((item) => item.card.id)).toEqual(['a', 'c']);
@@ -131,4 +131,40 @@ describe('totals', () => {
       ]),
     ).toEqual({ correct: 2, wrong: 1, hints: 2 });
   });
+});
+
+it('голос блокирует таймаут, сохраняет оценку и игнорирует повторный результат AI', () => {
+  const start = startSession([card('a')], LIMIT);
+  const speaking = sessionReducer(start, { type: 'voice', timeMs: 6000 });
+  expect(sessionReducer(speaking, { type: 'reveal', by: 'timeout', timeMs: LIMIT })).toBe(speaking);
+  expect(sessionReducer(speaking, { type: 'cancelVoice' })).toMatchObject({ phase: 'question', revealTimeMs: 6000 });
+  const graded = sessionReducer(speaking, { type: 'graded', index: 0, grade: 4, feedback: 'Хорошо' });
+  expect(sessionReducer(graded, { type: 'graded', index: 0, grade: 5, feedback: 'Повтор' })).toBe(graded);
+  const done = sessionReducer(graded, next);
+  expect(done.answers[0]).toMatchObject({ grade: 4, result: 'correct', points: 12, timeMs: 6000 });
+});
+it('«Проверить» во время записи открывает оборот и игнорирует результат AI', () => {
+  const speaking = play(startSession([card('a')], LIMIT), { type: 'voice', timeMs: 6000 });
+  const checked = sessionReducer(speaking, check(15000));
+  expect(checked).toMatchObject({ phase: 'answer', reveal: 'check', revealTimeMs: 6000 });
+  expect(sessionReducer(checked, { type: 'graded', index: 0, grade: 5, feedback: 'Поздний результат' })).toBe(checked);
+  expect(sessionReducer(checked, right).answers[0]).toMatchObject({ result: 'correct', points: 14 });
+});
+it('полностью неверный ответ сохраняет оценку ноль и не получает бонус за скорость', () => {
+  const done = play(startSession([card('a')], LIMIT),
+    { type: 'voice', timeMs: 0 },
+    { type: 'graded', index: 0, grade: 0, feedback: 'Неверно' },
+    next,
+  );
+  expect(done.answers[0]).toMatchObject({ grade: 0, points: 0, result: 'wrong' });
+  expect(done.queue[1]?.repeat).toBe(true);
+});
+it('частично верный ответ приносит очки и один повтор без бонуса', () => {
+  const speaking = sessionReducer(startSession([card('a')], LIMIT), { type: 'voice', timeMs: 0 });
+  const partial = play(speaking, { type: 'graded', index: 0, grade: 3, feedback: 'Неполно' }, next);
+  expect(partial.answers[0]).toMatchObject({ points: 5, result: 'wrong', grade: 3 });
+  const done = play(partial, { type: 'voice', timeMs: 0 }, { type: 'graded', index: 1, grade: 5, feedback: 'Верно' }, next);
+  expect(done.score).toBe(10);
+  expect(isFinished(done)).toBe(true);
+  expect(sessionReducer(partial, { type: 'graded', index: 0, grade: 5, feedback: 'Устарело' })).toBe(partial);
 });

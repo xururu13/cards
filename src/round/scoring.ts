@@ -1,36 +1,25 @@
 import type { AnswerResult } from '@/db/types';
 
-export const POINTS = {
-  correct: 10,
-  /** Верный ответ на карточку, которая вернулась в раунд после ошибки. */
-  repeatCorrect: 5,
-  speedBonusMax: 5,
-  streakBonusStep: 2,
-  streakBonusMax: 10,
-  /** Подсказка или истёкшее время. */
-  penalty: -5,
-} as const;
-
+export type Grade = 0 | 1 | 2 | 3 | 4 | 5;
+export const GRADE_POINTS = { 0: 0, 1: 0, 2: 2, 3: 5, 4: 8, 5: 10 } as const;
+export const isGrade = (value: unknown): value is Grade =>
+  typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 5;
+export const POINTS = { correct: 10, repeatCorrect: 5, speedBonusMax: 5, penalty: -3, timeout: -2 } as const;
 export interface ScoreInput {
   result: AnswerResult;
-  /** Сколько думал до открытия оборота. */
+  grade?: Grade;
   timeMs: number;
-  /** null — таймер выключен, бонуса за скорость нет. */
   timeLimitMs: number | null;
-  /** Сколько верных ответов подряд было до этого. */
   streak: number;
-  /** Карточка показывается повторно после ошибки в этом же раунде. */
   repeat: boolean;
 }
-
-/** Очки за один ответ, без учёта того, что счёт раунда не опускается ниже нуля. */
-export function scoreAnswer({ result, timeMs, timeLimitMs, streak, repeat }: ScoreInput): number {
-  if (result === 'wrong') return 0;
-  if (result === 'hint' || result === 'timeout') return POINTS.penalty;
-  if (repeat) return POINTS.repeatCorrect;
-
+/** Голос и самооценка используют одну шкалу; повтор без бонуса, половина вниз. */
+export function scoreAnswer({ result, grade, timeMs, timeLimitMs, repeat }: ScoreInput): number {
+  if (result === 'hint') return POINTS.penalty;
+  if (result === 'timeout') return POINTS.timeout;
+  const mark = grade ?? (result === 'correct' ? 5 : 0);
+  const base = GRADE_POINTS[mark];
+  if (repeat) return Math.floor(base / 2);
   const left = timeLimitMs ? Math.max(0, Math.min(1, 1 - timeMs / timeLimitMs)) : 0;
-  const speedBonus = Math.round(POINTS.speedBonusMax * left);
-  const streakBonus = Math.min(streak * POINTS.streakBonusStep, POINTS.streakBonusMax);
-  return POINTS.correct + speedBonus + streakBonus;
+  return base + (mark >= 4 ? Math.round(POINTS.speedBonusMax * left) : 0);
 }

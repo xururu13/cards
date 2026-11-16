@@ -42,6 +42,7 @@ export interface Round {
 }
 
 export interface Answer {
+  grade: number | null;
   id: string;
   round_id: string;
   card_id: string;

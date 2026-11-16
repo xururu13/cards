@@ -103,4 +103,11 @@ export const MIGRATIONS: readonly string[] = [
   ALTER TABLE rounds_new RENAME TO rounds;
   CREATE INDEX rounds_finished ON rounds(finished_at);
   `,
+  `ALTER TABLE answers ADD COLUMN grade INTEGER CHECK (grade BETWEEN 1 AND 5);`,
+  `
+  ALTER TABLE answers RENAME COLUMN grade TO old_grade;
+  ALTER TABLE answers ADD COLUMN grade INTEGER CHECK (grade BETWEEN 0 AND 5);
+  UPDATE answers SET grade = old_grade WHERE old_grade IS NOT NULL;
+  ALTER TABLE answers DROP COLUMN old_grade;
+  `,
 ];

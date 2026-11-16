@@ -35,11 +35,15 @@ SHA-1 релизного ключа (выше). Клиент для отладо
 export PATH=/opt/homebrew/opt/node@24/bin:$PATH
 export JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home
 export ANDROID_HOME=/opt/homebrew/share/android-commandlinetools
-npx expo prebuild --platform android --clean --no-install
-cd android && ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
+apk_version=$(node -p 'require("./app.json").expo.version')
+apk_path="dist/kartochki-${apk_version}.apk"
+npx expo prebuild --platform android --clean --no-install &&
+(cd android && ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a) &&
+  mkdir -p dist &&
+  cp android/app/build/outputs/apk/release/app-release.apk "$apk_path"
 ```
 
-Готовый файл: `android/app/build/outputs/apk/release/app-release.apk`.
+Готовый файл для передачи имеет имя `dist/kartochki-<версия>.apk`.
 
 Перед новой версией увеличьте `expo.version` и `expo.android.versionCode` в `app.json`.
 
@@ -47,7 +51,7 @@ cd android && ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,arm
 
 ## Установка
 
-- По кабелю: `adb install -r app-release.apk`.
+- По кабелю из того же терминала: `adb install -r "$apk_path"`.
 - Без кабеля: отправьте файл на телефон (мессенджер, Диск) и откройте его. Android попросит
   разрешить установку из этого источника.
 

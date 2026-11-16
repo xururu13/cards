@@ -8,18 +8,18 @@ const NOW = 100 * DAY;
 describe('scoreAnswer', () => {
   const base = { timeMs: 30_000, timeLimitMs: 30_000, streak: 0, repeat: false };
 
-  it('ограничивает бонус за серию десятью очками', () => {
-    expect(scoreAnswer({ ...base, result: 'correct', streak: 5 })).toBe(20);
-    expect(scoreAnswer({ ...base, result: 'correct', streak: 50 })).toBe(20);
+  it('серия не увеличивает награду', () => {
+    expect(scoreAnswer({ ...base, result: 'correct', streak: 5 })).toBe(10);
+    expect(scoreAnswer({ ...base, result: 'correct', streak: 50 })).toBe(10);
   });
 
   it('не даёт отрицательный бонус, если время превышено', () => {
     expect(scoreAnswer({ ...base, result: 'correct', timeMs: 45_000 })).toBe(10);
   });
 
-  it('штрафует подсказку и истёкшее время одинаково, даже при повторе', () => {
-    expect(scoreAnswer({ ...base, result: 'hint' })).toBe(-5);
-    expect(scoreAnswer({ ...base, result: 'timeout', repeat: true })).toBe(-5);
+  it('штраф за подсказку 3, за время 2', () => {
+    expect(scoreAnswer({ ...base, result: 'hint' })).toBe(-3);
+    expect(scoreAnswer({ ...base, result: 'timeout', repeat: true })).toBe(-2);
     expect(scoreAnswer({ ...base, result: 'wrong', streak: 3 })).toBe(0);
   });
 });
@@ -84,4 +84,12 @@ describe('подбор карточек', () => {
     expect(shuffle(source, () => 0)).toEqual(['b', 'c', 'd', 'e', 'a']);
     expect(source).toEqual(['a', 'b', 'c', 'd', 'e']);
   });
+});
+
+it('полная шкала оценок, бонус только 4–5 и половина при повторе', () => {
+  const base = { result: 'correct' as const, timeMs: 0, timeLimitMs: 30000, streak: 100, repeat: false };
+  const grades = [1, 2, 3, 4, 5] as const;
+  expect(grades.map(grade => scoreAnswer({ ...base, grade, timeLimitMs: null }))).toEqual([0, 2, 5, 8, 10]);
+  expect(grades.map(grade => scoreAnswer({ ...base, grade }))).toEqual([0, 2, 5, 13, 15]);
+  expect(grades.map(grade => scoreAnswer({ ...base, grade, repeat: true }))).toEqual([0, 1, 2, 4, 5]);
 });
