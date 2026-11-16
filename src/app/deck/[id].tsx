@@ -141,7 +141,7 @@ export default function DeckScreen() {
           />
         </View>
         <Button
-          title="Из учебника"
+          title="Наборы карточек"
           icon="library-outline"
           onPress={() => router.push({ pathname: '/catalog', params: { deckId: deck.id } })}
         />
