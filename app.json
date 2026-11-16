@@ -48,7 +48,15 @@
           ]
         }
       ],
-      "expo-sharing"
+      "expo-sharing",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Камера нужна, чтобы сфотографировать текст для карточки.",
+          "photosPermission": "Доступ к фото нужен, чтобы взять текст для карточки из снимка.",
+          "microphonePermission": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

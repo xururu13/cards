@@ -1,9 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRef, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, View } from 'react-native';
+
+import type { PhotoSource } from '@/ai/photo';
 
 import { Button } from '@/components/button';
 import { FieldLabel, FormError, FormScreen } from '@/components/form';
+import { PhotoTextModal } from '@/components/photo-text-modal';
 import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
 import { languageShort, nextLanguage } from '@/constants/languages';
@@ -38,6 +41,7 @@ export function CardForm({
   const [text, setText] = useState<Record<Side, string>>(initial);
   const [error, setError] = useState<string | null>(null);
   const [savedCount, setSavedCount] = useState(0);
+  const [photo, setPhoto] = useState<{ side: Side; source: PhotoSource } | null>(null);
   // Текст поля на момент начала диктовки: распознанное дописывается после него.
   const dictationBase = useRef('');
 
@@ -59,6 +63,24 @@ export function CardForm({
     dictationBase.current = text[side].trim();
     setError(null);
     void dictation.start(side, languages[side]);
+  };
+
+  const askPhoto = (side: Side) => {
+    if (dictation.target) dictation.stop();
+    Alert.alert('Текст с фото', 'Сфотографируй слово или абзац — можно будет обрезать лишнее.', [
+      { text: 'Отмена', style: 'cancel' },
+      { text: 'Из галереи', onPress: () => setPhoto({ side, source: 'library' }) },
+      { text: 'Камера', onPress: () => setPhoto({ side, source: 'camera' }) },
+    ]);
+  };
+
+  /** Распознанный текст дописывается к тому, что уже введено в поле. */
+  const insertPhotoText = (side: Side, recognized: string) => {
+    setText((current) => {
+      const base = current[side].trim();
+      return { ...current, [side]: base ? `${base} ${recognized}` : recognized };
+    });
+    setError(null);
   };
 
   const save = async (addMore: boolean) => {
@@ -88,6 +110,14 @@ export function CardForm({
           <ThemedText type="small" themeColor="textSecondary">
             {languageShort(languages[side])}
           </ThemedText>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Текст с фото"
+          hitSlop={8}
+          onPress={() => askPhoto(side)}
+          style={styles.mic}>
+          <Ionicons name="camera-outline" size={22} color={theme.accent} />
         </Pressable>
         <Pressable
           accessibilityRole="button"
@@ -143,6 +173,12 @@ export function CardForm({
         </ThemedText>
       )}
       <FormError message={error ?? dictation.error} />
+      <PhotoTextModal
+        source={photo?.source ?? null}
+        language={photo ? languages[photo.side] : languages.front}
+        onInsert={(recognized) => photo && insertPhotoText(photo.side, recognized)}
+        onClose={() => setPhoto(null)}
+      />
       {savedCount > 0 && !error && (
         <ThemedText type="small" style={{ color: theme.success }}>
           Сохранено карточек: {savedCount}
@@ -153,7 +189,7 @@ export function CardForm({
 }
 
 const styles = StyleSheet.create({
-  accessory: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
+  accessory: { flexDirection: 'row', alignItems: 'center', gap: Spacing.one },
   lang: {
     borderWidth: 1,
     borderRadius: 8,
