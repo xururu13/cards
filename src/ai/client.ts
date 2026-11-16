@@ -48,7 +48,7 @@ export async function chat(
   config: AiConfig,
   messages: ChatMessage[],
   fetchImpl: typeof fetch = fetch,
-  timeoutMs = TIMEOUT_MS,
+  { timeoutMs = TIMEOUT_MS, temperature = 0 }: { timeoutMs?: number; temperature?: number } = {},
 ): Promise<string> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -60,7 +60,7 @@ export async function chat(
         'Content-Type': 'application/json',
         ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
       },
-      body: JSON.stringify({ model: config.model, messages, temperature: 0, max_tokens: 2000 }),
+      body: JSON.stringify({ model: config.model, messages, temperature, max_tokens: 2000 }),
       signal: controller.signal,
     });
   } catch {

@@ -67,7 +67,7 @@ describe('chat', () => {
       new Promise((_, reject) =>
         init!.signal!.addEventListener('abort', () => reject(new Error('aborted'))),
       )) as typeof fetch;
-    await expect(chat(config, [], hanging, 10)).rejects.toThrow(/не ответила/);
+    await expect(chat(config, [], hanging, { timeoutMs: 10 })).rejects.toThrow(/не ответила/);
   });
 
   it('пустой ответ — ошибка', async () => {

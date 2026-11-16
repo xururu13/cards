@@ -39,7 +39,11 @@ describe('снимок', () => {
   it('переносит все данные на чистое устройство', async () => {
     const { phone, tablet } = await twoDevices();
     expect(await exportSnapshot(tablet.db, 1)).toEqual(await exportSnapshot(phone.db, 1));
-    expect(await getSettings(tablet.db)).toEqual({ timerSeconds: 45, roundSize: 10 });
+    expect(await getSettings(tablet.db)).toEqual({
+      timerSeconds: 45,
+      roundSize: 10,
+      defaultLanguage: 'ru-RU',
+    });
     expect((await getScoreStats(tablet.db, 300)).bestRound).toBe(15);
   });
 

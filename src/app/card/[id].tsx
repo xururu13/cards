@@ -47,6 +47,7 @@ function EditCardForm({ card, deck }: { card: Card; deck: DeckSummary }) {
 
   return (
     <CardForm
+      deckId={deck.id}
       deckName={deck.name}
       initial={{ front: card.front, back: card.back }}
       languages={languages}

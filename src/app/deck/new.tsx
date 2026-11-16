@@ -1,16 +1,25 @@
 import { useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
+import { useCallback } from 'react';
 
 import { DeckForm } from '@/components/deck-form';
-import { DEFAULT_LANGUAGE } from '@/constants/languages';
+import { StatusScreen } from '@/components/status-screen';
 import { createDeck } from '@/db/decks';
+import { getSettings } from '@/db/settings';
+import { useFocusLoad } from '@/hooks/use-focus-load';
 
 export default function NewDeckScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
+  const { data: settings, error } = useFocusLoad(useCallback(() => getSettings(db), [db]));
+
+  if (error) return <StatusScreen error={error} />;
+  if (!settings) return <StatusScreen />;
+
+  const lang = settings.defaultLanguage;
   return (
     <DeckForm
-      initial={{ name: '', frontLang: DEFAULT_LANGUAGE, backLang: DEFAULT_LANGUAGE }}
+      initial={{ name: '', frontLang: lang, backLang: lang }}
       submitTitle="Создать стопку"
       onSubmit={async (input) => {
         const id = await createDeck(db, input);

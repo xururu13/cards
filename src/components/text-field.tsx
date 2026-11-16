@@ -20,7 +20,10 @@ export function TextField({ accessory, highlighted, multiline, style, ...rest }:
         style={[styles.input, { color: theme.text }, multiline && styles.inputMultiline, style]}
         {...rest}
       />
-      {accessory}
+      {accessory && (
+        // В многострочном поле значки стоят под текстом, чтобы не сужать его.
+        <View style={multiline && styles.accessoryBelow}>{accessory}</View>
+      )}
     </View>
   );
 }
@@ -35,7 +38,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     minHeight: 52,
   },
-  multiline: { alignItems: 'flex-start', minHeight: 112, paddingVertical: Spacing.two },
+  multiline: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    minHeight: 112,
+    paddingVertical: Spacing.two,
+  },
+  accessoryBelow: { alignSelf: 'flex-end' },
   input: { flex: 1, fontSize: 16, paddingVertical: Spacing.two },
-  inputMultiline: { textAlignVertical: 'top', minHeight: 92, paddingVertical: 0 },
+  inputMultiline: { flex: 0, textAlignVertical: 'top', minHeight: 64, paddingVertical: 0 },
 });

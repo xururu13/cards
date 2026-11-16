@@ -8,9 +8,6 @@ export interface Language {
 export const LANGUAGES: readonly Language[] = [
   { code: 'ru-RU', label: 'Русский', short: 'RU' },
   { code: 'en-US', label: 'Английский', short: 'EN' },
-  { code: 'de-DE', label: 'Немецкий', short: 'DE' },
-  { code: 'fr-FR', label: 'Французский', short: 'FR' },
-  { code: 'es-ES', label: 'Испанский', short: 'ES' },
 ];
 
 export const DEFAULT_LANGUAGE = LANGUAGES[0].code;

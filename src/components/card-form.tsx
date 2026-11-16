@@ -6,6 +6,7 @@ import type { PhotoSource } from '@/ai/photo';
 
 import { Button } from '@/components/button';
 import { FieldLabel, FormError, FormScreen } from '@/components/form';
+import { GenerateModal } from '@/components/generate-modal';
 import { PhotoTextModal } from '@/components/photo-text-modal';
 import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
@@ -18,6 +19,7 @@ import { useTheme } from '@/hooks/use-theme';
 type Side = 'front' | 'back';
 
 type Props = {
+  deckId: string;
   deckName: string;
   initial: CardInput;
   languages: Record<Side, string>;
@@ -29,6 +31,7 @@ type Props = {
 };
 
 export function CardForm({
+  deckId,
   deckName,
   initial,
   languages,
@@ -41,6 +44,7 @@ export function CardForm({
   const [text, setText] = useState<Record<Side, string>>(initial);
   const [error, setError] = useState<string | null>(null);
   const [savedCount, setSavedCount] = useState(0);
+  const [generating, setGenerating] = useState(false);
   const [photo, setPhoto] = useState<{ side: Side; source: PhotoSource } | null>(null);
   // Текст поля на момент начала диктовки: распознанное дописывается после него.
   const dictationBase = useRef('');
@@ -111,6 +115,19 @@ export function CardForm({
             {languageShort(languages[side])}
           </ThemedText>
         </Pressable>
+        {side === 'back' && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Оборот с помощью AI"
+            hitSlop={8}
+            onPress={() => {
+              if (dictation.target) dictation.stop();
+              setGenerating(true);
+            }}
+            style={styles.mic}>
+            <Ionicons name="sparkles-outline" size={22} color={theme.accent} />
+          </Pressable>
+        )}
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Текст с фото"
@@ -173,6 +190,16 @@ export function CardForm({
         </ThemedText>
       )}
       <FormError message={error ?? dictation.error} />
+      <GenerateModal
+        visible={generating}
+        deckId={deckId}
+        deckName={deckName}
+        front={text.front}
+        backLanguage={languages.back}
+        currentBack={text.back}
+        onApply={(generated) => change('back', generated)}
+        onClose={() => setGenerating(false)}
+      />
       <PhotoTextModal
         source={photo?.source ?? null}
         language={photo ? languages[photo.side] : languages.front}

@@ -26,6 +26,7 @@ function NewCardForm({ deck }: { deck: DeckSummary }) {
   const [languages, changeLanguage] = useDeckLanguages(db, deck);
   return (
     <CardForm
+      deckId={deck.id}
       deckName={deck.name}
       initial={{ front: '', back: '' }}
       languages={languages}

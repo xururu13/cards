@@ -175,10 +175,10 @@ describe('очки и рекорды', () => {
 });
 
 describe('настройки', () => {
-  it('по умолчанию таймер 30 секунд и 10 карточек', async () => {
+  it('по умолчанию таймер 30 секунд, 10 карточек и русский язык', async () => {
     const { db } = await setup();
     expect(await getSettings(db)).toEqual(DEFAULT_SETTINGS);
-    expect(DEFAULT_SETTINGS).toEqual({ timerSeconds: 30, roundSize: 10 });
+    expect(DEFAULT_SETTINGS).toEqual({ timerSeconds: 30, roundSize: 10, defaultLanguage: 'ru-RU' });
   });
 
   it('сохраняет и перезаписывает значения', async () => {
@@ -186,12 +186,15 @@ describe('настройки', () => {
     await setSetting(db, 'timerSeconds', 15);
     await setSetting(db, 'timerSeconds', 0);
     await setSetting(db, 'roundSize', 20);
-    expect(await getSettings(db)).toEqual({ timerSeconds: 0, roundSize: 20 });
+    await setSetting(db, 'defaultLanguage', 'en-US');
+    expect(await getSettings(db)).toEqual({ timerSeconds: 0, roundSize: 20, defaultLanguage: 'en-US' });
   });
 
   it('отклоняет недопустимое значение и игнорирует испорченное в базе', async () => {
     const { raw, db } = await setup();
     await expect(setSetting(db, 'roundSize', 7)).rejects.toThrow(/Недопустимое/);
+    await expect(setSetting(db, 'defaultLanguage', 'de-DE')).rejects.toThrow(/Недопустимое/);
+    raw.prepare("INSERT INTO settings (key, value, updated_at) VALUES ('defaultLanguage', 'fr-FR', 1)").run();
     raw.prepare("INSERT INTO settings (key, value, updated_at) VALUES ('timerSeconds', 'abc', 1)").run();
     expect(await getSettings(db)).toEqual(DEFAULT_SETTINGS);
   });

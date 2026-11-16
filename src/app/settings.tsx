@@ -4,6 +4,7 @@ import { ActivityIndicator, Alert, ScrollView, StyleSheet, View } from 'react-na
 
 import { Button } from '@/components/button';
 import { FieldLabel, FormError } from '@/components/form';
+import { LanguageChips } from '@/components/language-chips';
 import { OptionChips } from '@/components/option-chips';
 import { StatusScreen } from '@/components/status-screen';
 import { ThemedText } from '@/components/themed-text';
@@ -107,7 +108,7 @@ export default function SettingsScreen() {
     }
   };
 
-  const change = (key: keyof Settings, value: number) => {
+  const change = <K extends keyof Settings>(key: K, value: Settings[K]) => {
     setSettings({ ...settings, [key]: value });
     setError(null);
     setSetting(db, key, value).catch((e: unknown) =>
@@ -205,6 +206,18 @@ export default function SettingsScreen() {
           value={settings.roundSize}
           onChange={(value) => change('roundSize', value)}
         />
+
+        <ThemedText type="smallBold" style={styles.section}>
+          Язык
+        </ThemedText>
+        <FieldLabel>Язык по умолчанию</FieldLabel>
+        <LanguageChips
+          value={settings.defaultLanguage}
+          onChange={(value) => change('defaultLanguage', value)}
+        />
+        <ThemedText type="small" themeColor="textSecondary">
+          Подставляется в новые стопки для обеих сторон карточки. В самой стопке его можно поменять.
+        </ThemedText>
 
         <ThemedText type="smallBold" style={styles.section}>
           Google Drive
