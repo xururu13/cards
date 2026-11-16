@@ -5,4 +5,6 @@ export interface Db {
   runAsync(source: string, params: SqlValue[]): Promise<unknown>;
   getAllAsync<T>(source: string, params: SqlValue[]): Promise<T[]>;
   getFirstAsync<T>(source: string, params: SqlValue[]): Promise<T | null>;
+  /** Всё внутри `task` применяется целиком или не применяется вовсе. */
+  withTransactionAsync(task: () => Promise<void>): Promise<void>;
 }

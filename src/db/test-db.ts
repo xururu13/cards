@@ -20,6 +20,16 @@ export function openMemoryDb() {
     async getFirstAsync<T>(source: string, params: SqlValue[] = []) {
       return (raw.prepare(source).get(...params) as T | undefined) ?? null;
     },
+    async withTransactionAsync(task: () => Promise<void>) {
+      raw.exec('BEGIN');
+      try {
+        await task();
+        raw.exec('COMMIT');
+      } catch (error) {
+        raw.exec('ROLLBACK');
+        throw error;
+      }
+    },
   };
   return { raw, db };
 }
