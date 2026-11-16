@@ -21,6 +21,7 @@ export default function NewDeckScreen() {
     <DeckForm
       initial={{ name: '', frontLang: lang, backLang: lang }}
       submitTitle="Создать стопку"
+      onCatalog={() => router.replace('/catalog')}
       onSubmit={async (input) => {
         const id = await createDeck(db, input);
         router.replace({ pathname: '/deck/[id]', params: { id } });

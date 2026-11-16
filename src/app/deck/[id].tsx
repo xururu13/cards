@@ -118,11 +118,20 @@ export default function DeckScreen() {
           );
         }}
       />
-      <Button
-        title="Добавить карточку"
-        variant={cards.length ? 'secondary' : 'primary'}
-        onPress={addCard}
-      />
+      <View style={styles.actions}>
+        <View style={styles.action}>
+          <Button
+            title="Добавить карточку"
+            variant={cards.length ? 'secondary' : 'primary'}
+            onPress={addCard}
+          />
+        </View>
+        <Button
+          title="Из учебника"
+          icon="library-outline"
+          onPress={() => router.push({ pathname: '/catalog', params: { deckId: deck.id } })}
+        />
+      </View>
     </ThemedView>
   );
 }
@@ -144,4 +153,6 @@ const styles = StyleSheet.create({
     padding: Spacing.three,
   },
   rowText: { flex: 1, gap: Spacing.half },
+  actions: { flexDirection: 'row', gap: Spacing.two },
+  action: { flex: 1 },
 });
