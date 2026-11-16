@@ -47,7 +47,8 @@
             "com.google.android.tts"
           ]
         }
-      ]
+      ],
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true,

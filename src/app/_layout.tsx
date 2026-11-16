@@ -3,12 +3,14 @@ import { SQLiteProvider } from 'expo-sqlite';
 import { useColorScheme } from 'react-native';
 
 import { migrate } from '@/db/migrate';
+import { AutoSync } from '@/sync/auto-sync';
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <SQLiteProvider databaseName="cards.db" onInit={async (db) => void (await migrate(db))}>
+        <AutoSync />
         <Stack screenOptions={{ headerBackButtonDisplayMode: 'minimal' }}>
           <Stack.Screen name="index" options={{ title: 'Твои стопки' }} />
           <Stack.Screen name="settings" options={{ title: 'Настройки' }} />

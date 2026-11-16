@@ -14,7 +14,7 @@ describe('migrate', () => {
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
       .all()
       .map((row) => row.name);
-    expect(tables).toEqual(['answers', 'cards', 'decks', 'rounds', 'settings']);
+    expect(tables).toEqual(['answers', 'cards', 'decks', 'meta', 'rounds', 'settings']);
   });
 
   it('повторный запуск ничего не меняет', async () => {

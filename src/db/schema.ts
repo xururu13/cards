@@ -66,4 +66,11 @@ export const MIGRATIONS: readonly string[] = [
     updated_at INTEGER NOT NULL
   );
   `,
+  `
+  -- Служебные значения этого устройства. В снимки и синхронизацию не попадают.
+  CREATE TABLE meta (
+    key TEXT PRIMARY KEY NOT NULL,
+    value TEXT NOT NULL
+  );
+  `,
 ];

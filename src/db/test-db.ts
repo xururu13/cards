@@ -12,7 +12,7 @@ export function openMemoryDb() {
       raw.exec(source);
     },
     async runAsync(source: string, params: SqlValue[] = []) {
-      return raw.prepare(source).run(...params);
+      return { changes: Number(raw.prepare(source).run(...params).changes) };
     },
     async getAllAsync<T>(source: string, params: SqlValue[] = []) {
       return raw.prepare(source).all(...params) as T[];
