@@ -14,7 +14,17 @@ export async function migrate(
   db: MigrationDb,
   migrations: readonly string[] = MIGRATIONS,
 ): Promise<number> {
-  await db.execAsync('PRAGMA foreign_keys = ON;');
+  // На время миграций проверка ссылок выключена: иначе нельзя пересоздать таблицу,
+  // на которую ссылаются другие. После миграций ссылки проверяются целиком.
+  await db.execAsync('PRAGMA foreign_keys = OFF;');
+  try {
+    return await runMigrations(db, migrations);
+  } finally {
+    await db.execAsync('PRAGMA foreign_keys = ON;');
+  }
+}
+
+async function runMigrations(db: MigrationDb, migrations: readonly string[]): Promise<number> {
   const row = await db.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
   let version = row?.user_version ?? 0;
 
@@ -34,5 +44,7 @@ export async function migrate(
     }
     version = next;
   }
+  const broken = await db.getFirstAsync<{ table: string }>('PRAGMA foreign_key_check');
+  if (broken) throw new Error(`После обновления базы нарушены ссылки в таблице ${broken.table}`);
   return version;
 }

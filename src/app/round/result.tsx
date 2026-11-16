@@ -11,6 +11,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { getRoundResult, type RoundAnswer } from '@/db/rounds';
 import { getBestRoundBefore, getScoreStats } from '@/db/stats';
+import { ALL_DECKS } from '@/round/mixed';
 import type { AnswerResult } from '@/db/types';
 import { useFocusLoad } from '@/hooks/use-focus-load';
 import { useTheme } from '@/hooks/use-theme';
@@ -130,15 +131,19 @@ export default function RoundResultScreen() {
           onPress={() =>
             router.replace({
               pathname: '/round/[deckId]',
-              params: { deckId: round.deck_id, fromRound: round.id },
+              params: { deckId: round.deck_id ?? ALL_DECKS, fromRound: round.id },
             })
           }
         />
       )}
       <Button
-        title="К стопке"
+        title={round.deck_id ? 'К стопке' : 'К стопкам'}
         variant={missed.length > 0 ? 'secondary' : 'primary'}
-        onPress={() => router.dismissTo({ pathname: '/deck/[id]', params: { id: round.deck_id } })}
+        onPress={() =>
+          round.deck_id
+            ? router.dismissTo({ pathname: '/deck/[id]', params: { id: round.deck_id } })
+            : router.dismissAll()
+        }
       />
     </ThemedView>
   );

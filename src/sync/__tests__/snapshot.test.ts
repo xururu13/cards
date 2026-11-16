@@ -105,6 +105,14 @@ describe('снимок', () => {
     expect((await exportSnapshot(phone.db)).answers).toHaveLength(2);
   });
 
+  it('смешанный раунд (без стопки) переносится на другое устройство', async () => {
+    const { phone, tablet, dog } = await twoDevices();
+    await saveRound(tablet.db, null, 300, [{ cardId: dog, result: 'correct', timeMs: 900, points: 20, repeat: false }], 400);
+    await mergeSnapshot(phone.db, await roundTrip(tablet));
+
+    expect(await getScoreStats(phone.db, 500)).toMatchObject({ bestRound: 20, bestRoundDeck: 'Все стопки' });
+  });
+
   it('служебные значения устройства в снимок не попадают', async () => {
     const { phone } = await twoDevices();
     phone.raw.prepare("INSERT INTO meta (key, value) VALUES ('lastSyncAt', '1')").run();

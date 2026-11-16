@@ -50,7 +50,7 @@ const TABLES = {
   },
   rounds: {
     id: 'string',
-    deck_id: 'string',
+    deck_id: 'string?',
     started_at: 'number',
     finished_at: 'number?',
     correct: 'number',

@@ -7,7 +7,7 @@ export interface ScoreStats {
   bestDay: number;
   /** Лучший счёт одного раунда. */
   bestRound: number;
-  /** Стопка лучшего раунда; null, если раундов нет или стопка удалена. */
+  /** Стопка лучшего раунда («Все стопки» для смешанного); null, если раундов нет или стопка удалена. */
   bestRoundDeck: string | null;
 }
 
@@ -32,7 +32,7 @@ export async function getScoreStats(db: Db, now = Date.now()): Promise<ScoreStat
     [],
   );
   const bestRound = await db.getFirstAsync<{ score: number; deck: string | null }>(
-    `SELECT r.score, d.name AS deck
+    `SELECT r.score, CASE WHEN r.deck_id IS NULL THEN 'Все стопки' ELSE d.name END AS deck
        FROM rounds r LEFT JOIN decks d ON d.id = r.deck_id AND d.deleted_at IS NULL
       WHERE r.deleted_at IS NULL AND r.finished_at IS NOT NULL
       ORDER BY r.score DESC, r.finished_at LIMIT 1`,

@@ -20,13 +20,14 @@ import { StatusScreen } from '@/components/status-screen';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
-import { listCards } from '@/db/cards';
+import { listAllCards, listCards } from '@/db/cards';
 import { listMissedCardIds, saveRound } from '@/db/rounds';
 import { getSettings } from '@/db/settings';
 import type { Card } from '@/db/types';
 import { useTheme } from '@/hooks/use-theme';
 import { pickRoundCards, shuffle } from '@/round/picking';
 import { formatDelta } from '@/round/format';
+import { ALL_DECKS } from '@/round/mixed';
 import { POINTS } from '@/round/scoring';
 import { isFinished, sessionReducer, startSession } from '@/round/session';
 
@@ -36,7 +37,12 @@ const SLIDE_MS = 260;
 export default function RoundScreen() {
   const { deckId, fromRound } = useLocalSearchParams<{ deckId: string; fromRound?: string }>();
   const db = useSQLiteContext();
-  const [round, setRound] = useState<{ cards: Card[]; timeLimitMs: number | null } | null>(null);
+  const mixed = deckId === ALL_DECKS;
+  const [round, setRound] = useState<{
+    cards: Card[];
+    timeLimitMs: number | null;
+    deckNames: Record<string, string> | null;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Карточки выбираются один раз при открытии: состав раунда не должен меняться на ходу.
@@ -44,30 +50,49 @@ export default function RoundScreen() {
     let active = true;
     (async () => {
       const settings = await getSettings(db);
-      const all = await listCards(db, deckId);
+      const withDecks = mixed ? await listAllCards(db) : null;
+      const all = withDecks ?? (await listCards(db, deckId));
       const timeLimitMs = settings.timerSeconds > 0 ? settings.timerSeconds * 1000 : null;
+      // В смешанном раунде на карточке подписано, из какой она стопки.
+      const deckNames = withDecks && Object.fromEntries(withDecks.map((card) => [card.deck_id, card.deck_name]));
       if (!fromRound) {
-        return { cards: pickRoundCards(all, settings.roundSize, Date.now()), timeLimitMs };
+        return { cards: pickRoundCards(all, settings.roundSize, Date.now()), timeLimitMs, deckNames };
       }
       const missed = new Set((await listMissedCardIds(db, fromRound)).map((row) => row.id));
-      return { cards: shuffle(all.filter((card) => missed.has(card.id))), timeLimitMs };
+      return { cards: shuffle(all.filter((card) => missed.has(card.id))), timeLimitMs, deckNames };
     })()
       .then((loaded) => active && setRound(loaded))
       .catch((e: unknown) => active && setError(e instanceof Error ? e.message : String(e)));
     return () => {
       active = false;
     };
-  }, [db, deckId, fromRound]);
+  }, [db, deckId, fromRound, mixed]);
 
   if (error) return <StatusScreen error={error} />;
   if (!round) return <StatusScreen />;
-  if (round.cards.length === 0) return <StatusScreen error="В стопке нет карточек для раунда." />;
-  return <RoundPlay deckId={deckId} cards={round.cards} timeLimitMs={round.timeLimitMs} />;
+  if (round.cards.length === 0) {
+    return <StatusScreen error={mixed ? 'Пока нет карточек ни в одной стопке.' : 'В стопке нет карточек для раунда.'} />;
+  }
+  return (
+    <RoundPlay
+      deckId={mixed ? null : deckId}
+      cards={round.cards}
+      timeLimitMs={round.timeLimitMs}
+      deckNames={round.deckNames}
+    />
+  );
 }
 
-type RoundPlayProps = { deckId: string; cards: Card[]; timeLimitMs: number | null };
+type RoundPlayProps = {
+  /** null — смешанный раунд. */
+  deckId: string | null;
+  cards: Card[];
+  timeLimitMs: number | null;
+  /** Названия стопок для подписи на карточке; null — раунд по одной стопке. */
+  deckNames: Record<string, string> | null;
+};
 
-function RoundPlay({ deckId, cards, timeLimitMs }: RoundPlayProps) {
+function RoundPlay({ deckId, cards, timeLimitMs, deckNames }: RoundPlayProps) {
   const db = useSQLiteContext();
   const router = useRouter();
   const theme = useTheme();
@@ -295,6 +320,7 @@ function RoundPlay({ deckId, cards, timeLimitMs }: RoundPlayProps) {
           front={item.card.front}
           back={item.card.back}
           caption={item.repeat ? 'Повтор после ошибки. Вспомни, что на обороте' : 'Вспомни, что на обороте'}
+          label={deckNames?.[item.card.deck_id]}
           flip={flip}
           reducedMotion={reducedMotion}
         />

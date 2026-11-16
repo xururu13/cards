@@ -14,13 +14,15 @@ type Props = {
   back: string;
   /** Подпись под словом на лицевой стороне. */
   caption: string;
+  /** Метка в углу обеих сторон, например стопка карточки в смешанном раунде. */
+  label?: string;
   /** 0 — видна сторона со словом, 1 — оборот. */
   flip: SharedValue<number>;
   /** При «уменьшении движения» стороны проявляются без переворота. */
   reducedMotion: boolean;
 };
 
-export function FlipCard({ front, back, caption, flip, reducedMotion }: Props) {
+export function FlipCard({ front, back, caption, label, flip, reducedMotion }: Props) {
   const theme = useTheme();
 
   const frontStyle = useAnimatedStyle(() =>
@@ -45,10 +47,16 @@ export function FlipCard({ front, back, caption, flip, reducedMotion }: Props) {
   );
 
   const face = [styles.face, { borderColor: theme.border, backgroundColor: theme.backgroundElement }];
+  const badge = label ? (
+    <ThemedText type="small" style={[styles.label, { color: theme.accent }]} numberOfLines={1}>
+      {label}
+    </ThemedText>
+  ) : null;
 
   return (
     <View style={styles.container}>
       <Animated.View style={[face, frontStyle]}>
+        {badge}
         <ThemedText type="subtitle" style={styles.center} adjustsFontSizeToFit numberOfLines={4}>
           {front}
         </ThemedText>
@@ -57,6 +65,7 @@ export function FlipCard({ front, back, caption, flip, reducedMotion }: Props) {
         </ThemedText>
       </Animated.View>
       <Animated.View style={[face, backStyle]}>
+        {badge}
         <ThemedText type="small" themeColor="textSecondary" style={styles.center} numberOfLines={2}>
           {front}
         </ThemedText>
@@ -85,6 +94,7 @@ const styles = StyleSheet.create({
     backfaceVisibility: 'hidden',
   },
   center: { textAlign: 'center' },
+  label: { position: 'absolute', top: Spacing.three, left: Spacing.four, right: Spacing.four, textAlign: 'center' },
   backScroll: { flexGrow: 0, alignSelf: 'stretch' },
   backContent: { flexGrow: 1, justifyContent: 'center' },
   backText: { fontSize: 22, lineHeight: 30 },

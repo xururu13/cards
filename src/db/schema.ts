@@ -82,4 +82,25 @@ export const MIGRATIONS: readonly string[] = [
     imported_at INTEGER NOT NULL
   );
   `,
+  `
+  -- Смешанный раунд идёт по карточкам из всех стопок: у него нет стопки, deck_id = NULL.
+  -- SQLite не умеет снимать NOT NULL с колонки, поэтому таблица пересоздаётся.
+  CREATE TABLE rounds_new (
+    id TEXT PRIMARY KEY NOT NULL,
+    deck_id TEXT REFERENCES decks(id),
+    started_at INTEGER NOT NULL,
+    finished_at INTEGER,
+    correct INTEGER NOT NULL DEFAULT 0,
+    wrong INTEGER NOT NULL DEFAULT 0,
+    hints INTEGER NOT NULL DEFAULT 0,
+    score INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL,
+    deleted_at INTEGER
+  );
+  INSERT INTO rounds_new (id, deck_id, started_at, finished_at, correct, wrong, hints, score, updated_at, deleted_at)
+    SELECT id, deck_id, started_at, finished_at, correct, wrong, hints, score, updated_at, deleted_at FROM rounds;
+  DROP TABLE rounds;
+  ALTER TABLE rounds_new RENAME TO rounds;
+  CREATE INDEX rounds_finished ON rounds(finished_at);
+  `,
 ];

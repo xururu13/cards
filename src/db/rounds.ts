@@ -21,10 +21,11 @@ export interface RoundResult {
 /**
  * Сохраняет завершённый раунд: итоги, ответы с очками и новый прогресс карточек.
  * Всё в одной транзакции — раунд не может сохраниться наполовину.
+ * deckId = null — смешанный раунд по всем стопкам.
  */
 export async function saveRound(
   db: Db,
-  deckId: string,
+  deckId: string | null,
   startedAt: number,
   answers: readonly SessionAnswer[],
   now = Date.now(),

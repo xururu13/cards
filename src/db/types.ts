@@ -29,7 +29,8 @@ export interface Card {
 
 export interface Round {
   id: string;
-  deck_id: string;
+  /** null — смешанный раунд по всем стопкам. */
+  deck_id: string | null;
   started_at: number;
   finished_at: number | null;
   correct: number;

@@ -1,7 +1,7 @@
 import type { AnswerResult } from '@/db/types';
 import type { SessionAnswer } from '@/round/session';
 
-import { createCard, deleteCard, getCard } from '../cards';
+import { createCard, deleteCard, getCard, listAllCards } from '../cards';
 import { createDeck, deleteDeck } from '../decks';
 import { getRoundResult, listMissedCardIds, saveRound } from '../rounds';
 import { DEFAULT_SETTINGS, getSettings, setSetting } from '../settings';
@@ -197,5 +197,40 @@ describe('настройки', () => {
     raw.prepare("INSERT INTO settings (key, value, updated_at) VALUES ('defaultLanguage', 'fr-FR', 1)").run();
     raw.prepare("INSERT INTO settings (key, value, updated_at) VALUES ('timerSeconds', 'abc', 1)").run();
     expect(await getSettings(db)).toEqual(DEFAULT_SETTINGS);
+  });
+});
+
+describe('смешанный раунд', () => {
+  it('берёт карточки всех стопок, кроме удалённых, с названием стопки', async () => {
+    const { db, deckId, cat } = await setup();
+    const bio = await createDeck(db, { name: 'Биология', frontLang: 'ru-RU', backLang: 'ru-RU' });
+    await createCard(db, bio, { front: 'Спора', back: 'клетка' });
+    const gone = await createDeck(db, { name: 'Старая', frontLang: 'ru-RU', backLang: 'ru-RU' });
+    await createCard(db, gone, { front: 'x', back: 'y' });
+    await deleteDeck(db, gone);
+    await deleteCard(db, cat);
+
+    const cards = await listAllCards(db);
+    expect(cards.map((c) => [c.front, c.deck_name]).sort()).toEqual([
+      ['dog', 'English'],
+      ['fox', 'English'],
+      ['Спора', 'Биология'],
+    ]);
+    expect(cards.every((c) => c.deck_id === deckId || c.deck_id === bio)).toBe(true);
+  });
+
+  it('сохраняется без стопки, меняет прогресс карточек и попадает в рекорды как «Все стопки»', async () => {
+    const { db, cat } = await setup();
+    const bio = await createDeck(db, { name: 'Биология', frontLang: 'ru-RU', backLang: 'ru-RU' });
+    const spora = await createCard(db, bio, { front: 'Спора', back: 'клетка' });
+
+    const roundId = await saveRound(db, null, 1000, [answer(cat, 'correct', 15), answer(spora, 'wrong')], 2000);
+
+    const result = await getRoundResult(db, roundId);
+    expect(result?.round).toMatchObject({ deck_id: null, score: 15, correct: 1, wrong: 1 });
+    expect(result?.answers.map((a) => a.front)).toEqual(['cat', 'Спора']);
+    expect(await getCard(db, cat)).toMatchObject({ level: 1, last_shown_at: 2000 });
+    expect(await getCard(db, spora)).toMatchObject({ level: 0, wrong_count: 1 });
+    expect(await getScoreStats(db, 2000)).toMatchObject({ bestRound: 15, bestRoundDeck: 'Все стопки' });
   });
 });

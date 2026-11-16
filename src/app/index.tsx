@@ -12,6 +12,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { listDecks } from '@/db/decks';
 import { getScoreStats } from '@/db/stats';
+import { ALL_DECKS } from '@/round/mixed';
 import { useFocusLoad } from '@/hooks/use-focus-load';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -25,6 +26,8 @@ export default function DecksScreen() {
   );
   const decks = data?.decks;
   const stats = data?.stats;
+  // Смешанный раунд имеет смысл, когда карточки есть хотя бы в двух стопках.
+  const canMix = (decks ?? []).filter((deck) => deck.card_count > 0).length >= 2;
 
   if (error) return <StatusScreen error={`Не удалось прочитать базу. ${error}`} />;
 
@@ -95,7 +98,20 @@ export default function DecksScreen() {
           </Pressable>
         )}
       />
-      <Button title="Новая стопка" variant="primary" onPress={() => router.push('/deck/new')} />
+      <View style={styles.actions}>
+        <View style={styles.action}>
+          <Button title="Новая стопка" variant="primary" onPress={() => router.push('/deck/new')} />
+        </View>
+        {canMix && (
+          <View style={styles.action}>
+            <Button
+              title="Смешанный раунд"
+              icon="shuffle"
+              onPress={() => router.push({ pathname: '/round/[deckId]', params: { deckId: ALL_DECKS } })}
+            />
+          </View>
+        )}
+      </View>
     </ThemedView>
   );
 }
@@ -108,4 +124,6 @@ const styles = StyleSheet.create({
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.two },
   center: { textAlign: 'center' },
   row: { borderWidth: 1, borderRadius: 12, padding: Spacing.three, gap: Spacing.one },
+  actions: { flexDirection: 'row', gap: Spacing.two },
+  action: { flex: 1 },
 });

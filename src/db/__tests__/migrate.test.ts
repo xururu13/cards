@@ -78,4 +78,40 @@ describe('migrate', () => {
     addAnswer.run('a1', 'r1', 'c1', 'hint', 1200, -5, now);
     expect(() => addAnswer.run('a2', 'r1', 'c1', 'unknown', 0, 0, now)).toThrow();
   });
+
+  it('миграция 4 сохраняет раунды и ответы и разрешает раунд без стопки', async () => {
+    const { raw, db } = openMemoryDb();
+    await migrate(db, MIGRATIONS.slice(0, 3));
+    raw.prepare('INSERT INTO decks (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)').run('d1', 'Био', now, now);
+    raw
+      .prepare('INSERT INTO cards (id, deck_id, front, back, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .run('c1', 'd1', 'Спора', 'клетка', now, now);
+    raw
+      .prepare('INSERT INTO rounds (id, deck_id, started_at, finished_at, score, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .run('r1', 'd1', now, now + 1, 42, now);
+    raw
+      .prepare('INSERT INTO answers (id, round_id, card_id, result, time_ms, points, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run('a1', 'r1', 'c1', 'correct', 900, 10, now);
+    expect(() =>
+      raw.prepare('INSERT INTO rounds (id, deck_id, started_at, updated_at) VALUES (?, NULL, ?, ?)').run('r0', now, now),
+    ).toThrow();
+
+    await expect(migrate(db)).resolves.toBe(MIGRATIONS.length);
+
+    expect(raw.prepare('SELECT id, deck_id, finished_at, score FROM rounds').all()).toEqual([
+      { id: 'r1', deck_id: 'd1', finished_at: now + 1, score: 42 },
+    ]);
+    expect(raw.prepare('SELECT round_id FROM answers').all()).toEqual([{ round_id: 'r1' }]);
+    raw.prepare('INSERT INTO rounds (id, deck_id, started_at, updated_at) VALUES (?, NULL, ?, ?)').run('r2', now, now);
+    expect(raw.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name = 'rounds_finished'").get()).toEqual({ n: 1 });
+  });
+
+  it('после миграций ссылки снова проверяются', async () => {
+    const { raw, db } = openMemoryDb();
+    await migrate(db);
+    expect(raw.prepare('PRAGMA foreign_keys').get()).toEqual({ foreign_keys: 1 });
+    expect(() =>
+      raw.prepare('INSERT INTO rounds (id, deck_id, started_at, updated_at) VALUES (?, ?, ?, ?)').run('r1', 'нет', now, now),
+    ).toThrow();
+  });
 });

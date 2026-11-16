@@ -31,6 +31,20 @@ export function listCards(db: Db, deckId: string): Promise<Card[]> {
   );
 }
 
+export interface CardWithDeck extends Card {
+  deck_name: string;
+}
+
+/** Карточки всех стопок — для смешанного раунда. Без удалённых карточек и стопок. */
+export function listAllCards(db: Db): Promise<CardWithDeck[]> {
+  return db.getAllAsync<CardWithDeck>(
+    `SELECT c.*, d.name AS deck_name
+       FROM cards c JOIN decks d ON d.id = c.deck_id
+      WHERE c.deleted_at IS NULL AND d.deleted_at IS NULL`,
+    [],
+  );
+}
+
 export function getCard(db: Db, id: string): Promise<Card | null> {
   return db.getFirstAsync<Card>(`SELECT * FROM cards WHERE id = ? AND deleted_at IS NULL`, [id]);
 }
