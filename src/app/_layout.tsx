@@ -13,8 +13,10 @@ export default function RootLayout() {
           <Stack.Screen name="index" options={{ title: 'Твои стопки' }} />
           <Stack.Screen name="settings" options={{ title: 'Настройки' }} />
           <Stack.Screen name="deck/new" options={{ title: 'Новая стопка', presentation: 'modal' }} />
-          <Stack.Screen name="deck/[id]" options={{ title: 'Стопка' }} />
+          <Stack.Screen name="deck/edit" options={{ title: 'Стопка', presentation: 'modal' }} />
+          <Stack.Screen name="deck/[id]" options={{ title: '' }} />
           <Stack.Screen name="card/new" options={{ title: 'Новая карточка', presentation: 'modal' }} />
+          <Stack.Screen name="card/[id]" options={{ title: 'Карточка', presentation: 'modal' }} />
           <Stack.Screen name="round/[deckId]" options={{ title: 'Раунд' }} />
           <Stack.Screen name="round/result" options={{ title: 'Раунд завершён' }} />
         </Stack>

@@ -6,7 +6,7 @@ import { useTheme } from '@/hooks/use-theme';
 
 type ButtonProps = Omit<PressableProps, 'children' | 'style'> & {
   title: string;
-  variant?: 'primary' | 'secondary';
+  variant?: 'primary' | 'secondary' | 'danger';
 };
 
 export function Button({ title, variant = 'secondary', ...rest }: ButtonProps) {
@@ -19,11 +19,14 @@ export function Button({ title, variant = 'secondary', ...rest }: ButtonProps) {
         styles.button,
         primary
           ? { backgroundColor: theme.accent, borderColor: theme.accent }
-          : { borderColor: theme.border },
+          : { borderColor: variant === 'danger' ? theme.danger : theme.border },
         pressed && styles.pressed,
       ]}
       {...rest}>
-      <ThemedText style={primary && { color: theme.onAccent }}>{title}</ThemedText>
+      <ThemedText
+        style={[primary && { color: theme.onAccent }, variant === 'danger' && { color: theme.danger }]}>
+        {title}
+      </ThemedText>
     </Pressable>
   );
 }

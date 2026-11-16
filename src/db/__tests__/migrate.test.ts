@@ -1,23 +1,6 @@
-
-import { migrate, type MigrationDb } from '../migrate';
+import { migrate } from '../migrate';
 import { MIGRATIONS } from '../schema';
-
-// Jest не умеет импортировать node:sqlite напрямую, поэтому модуль берётся у самого Node.
-const { DatabaseSync } = process.getBuiltinModule('node:sqlite');
-
-/** Обёртка над встроенным в Node SQLite: проверяет настоящий SQL без телефона. */
-function openMemoryDb() {
-  const raw = new DatabaseSync(':memory:');
-  const db: MigrationDb = {
-    async execAsync(source) {
-      raw.exec(source);
-    },
-    async getFirstAsync<T>(source: string) {
-      return (raw.prepare(source).get() as T | undefined) ?? null;
-    },
-  };
-  return { raw, db };
-}
+import { openMemoryDb } from '../test-db';
 
 const now = 1_700_000_000_000;
 

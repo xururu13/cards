@@ -35,7 +35,19 @@
           "imageWidth": 76
         }
       ],
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Микрофон нужен, чтобы диктовать карточки голосом.",
+          "speechRecognitionPermission": "Распознавание речи превращает диктовку в текст карточки.",
+          "androidSpeechServicePackages": [
+            "com.google.android.googlequicksearchbox",
+            "com.google.android.as",
+            "com.google.android.tts"
+          ]
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
