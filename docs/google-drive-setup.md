@@ -40,7 +40,8 @@ Google узнаёт приложение по имени пакета и отп�
 /opt/homebrew/opt/openjdk@17/bin/keytool -list -v -keystore android/app/debug.keystore -storepass android | grep SHA1
 ```
 
-Для релизной сборки (этап 8) понадобится второй Android-клиент с SHA-1 релизного ключа.
+Для релизной сборки нужен второй Android-клиент с SHA-1 релизного ключа
+`9D:97:22:E0:5E:32:8F:CF:99:6B:6B:47:3D:17:05:33:CA:20:29:64` (см. [release.md](release.md)).
 Если приложение будет в Google Play с подписью Google, — SHA-1 из Play Console
 (**Setup → App signing**).
 
