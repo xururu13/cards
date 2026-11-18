@@ -1,17 +1,19 @@
 import { Stack, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useCallback } from 'react';
-import { FlatList, Pressable, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { Alert, AppState, FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
+import { DailyDashboard } from '@/components/daily-dashboard';
 import { HeaderIcon } from '@/components/header-icon';
 import { StatusScreen } from '@/components/status-screen';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { listDecks } from '@/db/decks';
-import { getScoreStats } from '@/db/stats';
+import { getScoreStats, nextDayStart, startOfDay } from '@/db/stats';
+import { getWordOfDay } from '@/db/word-of-day';
 import { ALL_DECKS } from '@/round/mixed';
 import { useFocusLoad } from '@/hooks/use-focus-load';
 import { useTheme } from '@/hooks/use-theme';
@@ -21,11 +23,31 @@ export default function DecksScreen() {
   const router = useRouter();
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const [day, setDay] = useState(() => startOfDay(Date.now()));
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const refreshDay = () => {
+      clearTimeout(timer);
+      const now = Date.now();
+      setDay(startOfDay(now));
+      timer = setTimeout(refreshDay, nextDayStart(now) - now);
+    };
+    refreshDay();
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') refreshDay();
+    });
+    return () => {
+      clearTimeout(timer);
+      subscription.remove();
+    };
+  }, []);
   const { data, error } = useFocusLoad(
-    useCallback(async () => ({ decks: await listDecks(db), stats: await getScoreStats(db) }), [db]),
+    useCallback(async () => {
+      const [decks, stats, word] = await Promise.all([listDecks(db), getScoreStats(db, day), getWordOfDay(db, day)]);
+      return { decks, stats, word, day };
+    }, [db, day]),
   );
   const decks = data?.decks;
-  const stats = data?.stats;
   // Смешанный раунд имеет смысл, когда карточки есть хотя бы в двух стопках.
   const canMix = (decks ?? []).filter((deck) => deck.card_count > 0).length >= 2;
 
@@ -48,30 +70,7 @@ export default function DecksScreen() {
         data={decks ?? []}
         keyExtractor={(deck) => deck.id}
         contentContainerStyle={styles.list}
-        ListHeaderComponent={
-          stats && stats.bestRound > 0 ? (
-            <View style={styles.stats}>
-              <View style={[styles.stat, { backgroundColor: theme.backgroundElement }]}>
-                <ThemedText type="small" themeColor="textSecondary">
-                  Сегодня
-                </ThemedText>
-                <ThemedText type="subtitle">{stats.today}</ThemedText>
-                <ThemedText type="small" themeColor="textSecondary">
-                  рекорд дня {stats.bestDay}
-                </ThemedText>
-              </View>
-              <View style={[styles.stat, { backgroundColor: theme.backgroundElement }]}>
-                <ThemedText type="small" themeColor="textSecondary">
-                  Лучший раунд
-                </ThemedText>
-                <ThemedText type="subtitle">{stats.bestRound}</ThemedText>
-                <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
-                  {stats.bestRoundDeck ?? 'очков'}
-                </ThemedText>
-              </View>
-            </View>
-          ) : undefined
-        }
+        ListHeaderComponent={data && <DailyDashboard stats={data.stats} word={data.word} day={data.day} />}
         ListEmptyComponent={
           decks ? (
             <View style={styles.empty}>
@@ -107,7 +106,20 @@ export default function DecksScreen() {
             <Button
               title="Смешанный раунд"
               icon="shuffle"
-              onPress={() => router.push({ pathname: '/round/[deckId]', params: { deckId: ALL_DECKS } })}
+              onPress={() => Alert.alert('Смешанный раунд', 'Какой стороной показывать карточки?', [
+                { text: 'Отмена', style: 'cancel' },
+                {
+                  text: 'Обычный',
+                  onPress: () => router.push({ pathname: '/round/[deckId]', params: { deckId: ALL_DECKS } }),
+                },
+                {
+                  text: 'Наоборот',
+                  onPress: () => router.push({
+                    pathname: '/round/[deckId]',
+                    params: { deckId: ALL_DECKS, direction: 'reverse' },
+                  }),
+                },
+              ], { cancelable: true })}
             />
           </View>
         )}
@@ -119,8 +131,6 @@ export default function DecksScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, paddingHorizontal: Spacing.three },
   list: { flexGrow: 1, gap: Spacing.two, paddingVertical: Spacing.three },
-  stats: { flexDirection: 'row', gap: Spacing.two, marginBottom: Spacing.two },
-  stat: { flex: 1, borderRadius: 12, padding: Spacing.three },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.two },
   center: { textAlign: 'center' },
   row: { borderWidth: 1, borderRadius: 12, padding: Spacing.three, gap: Spacing.one },

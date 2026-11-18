@@ -1,4 +1,5 @@
 export type AnswerResult = 'correct' | 'wrong' | 'hint' | 'timeout' | 'skipped';
+export type RoundDirection = 'forward' | 'reverse';
 
 export interface Deck {
   id: string;
@@ -31,6 +32,7 @@ export interface Round {
   id: string;
   /** null — смешанный раунд по всем стопкам. */
   deck_id: string | null;
+  direction: RoundDirection;
   started_at: number;
   finished_at: number | null;
   correct: number;

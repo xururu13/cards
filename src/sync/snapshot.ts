@@ -3,7 +3,7 @@ import type { Answer, Card, Deck, Round } from '@/db/types';
 import { isGrade } from '@/round/scoring';
 
 export const SNAPSHOT_FORMAT = 'kartochki-backup';
-export const SNAPSHOT_VERSION = 3;
+export const SNAPSHOT_VERSION = 4;
 
 export interface SettingRow {
   key: string;
@@ -52,6 +52,7 @@ const TABLES = {
   rounds: {
     id: 'string',
     deck_id: 'string?',
+    direction: 'string',
     started_at: 'number',
     finished_at: 'number?',
     correct: 'number',
@@ -84,13 +85,16 @@ export async function exportSnapshot(db: Db, now = Date.now()): Promise<Snapshot
     return db.getAllAsync<T>(`SELECT ${columns} FROM ${table} ORDER BY rowid`, []);
   };
   const answers = await rows<Answer>('answers');
+  const rounds = await rows<Round>('rounds');
+  const hasReverseRounds = rounds.some((round) => round.direction === 'reverse');
+  const hasSkippedAnswers = answers.some((answer) => answer.result === 'skipped');
   return {
     format: SNAPSHOT_FORMAT,
-    version: answers.some((answer) => answer.result === 'skipped') ? SNAPSHOT_VERSION : 2,
+    version: hasReverseRounds ? SNAPSHOT_VERSION : hasSkippedAnswers ? 3 : 2,
     exportedAt: now,
     decks: await rows<Deck>('decks'),
     cards: await rows<Card>('cards'),
-    rounds: await rows<Round>('rounds'),
+    rounds,
     answers,
     settings: await rows<SettingRow>('settings'),
   };
@@ -119,12 +123,18 @@ export function parseSnapshot(json: string): Snapshot {
   if (object.version === 1 && Array.isArray(object.answers)) {
     object.answers = object.answers.map((row) => ({ ...row, grade: null }));
   }
+  if (object.version < 4 && Array.isArray(object.rounds)) {
+    object.rounds = object.rounds.map((row) => row && ({ ...row, direction: 'forward' }));
+  }
   for (const table of ORDER) {
     const rows = object[table];
     if (!Array.isArray(rows)) throw new Error(`Файл повреждён: нет раздела ${table}.`);
     const fields = Object.entries(TABLES[table]) as [string, FieldType][];
     rows.forEach((row: Record<string, unknown> | null, index) => {
       if (table === 'answers' && row && row.grade !== null && !isGrade(row.grade)) throw new Error('Файл повреждён: недопустимая оценка ответа.');
+      if (table === 'rounds' && row && row.direction !== 'forward' && row.direction !== 'reverse') {
+        throw new Error('Файл повреждён: недопустимое направление раунда.');
+      }
       const broken = !row || fields.find(([field, type]) => !matches(row[field], type));
       if (broken) {
         const field = Array.isArray(broken) ? `, поле ${broken[0]}` : '';

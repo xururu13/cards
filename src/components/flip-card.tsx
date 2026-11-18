@@ -8,15 +8,14 @@ import Animated, {
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-
-// Флаг страны — пара региональных индикаторов. Вторая строка может уточнять регион.
-const COUNTRY_FLAG = /^([\u{1F1E6}-\u{1F1FF}]{2})(?:\n(.+))?$/u;
+import { COUNTRY_FLAG } from '@/round/flag';
 
 type Props = {
   front: string;
   frontContent?: React.ReactNode;
   back: string;
   backContent?: React.ReactNode;
+  longQuestion?: boolean;
   showBack: boolean;
   /** Подпись под словом на лицевой стороне. */
   caption: string;
@@ -28,7 +27,28 @@ type Props = {
   reducedMotion: boolean;
 };
 
-export function FlipCard({ front, frontContent, back, backContent, showBack, caption, label, flip, reducedMotion }: Props) {
+function renderFlag(text: string, hideName = false) {
+  const match = COUNTRY_FLAG.exec(text);
+  if (!match) return null;
+  return (
+    <>
+      <ThemedText
+        accessibilityLabel={hideName ? 'Флаг страны' : undefined}
+        style={[styles.center, styles.flag]}
+        numberOfLines={1}
+        adjustsFontSizeToFit>
+        {match[1]}
+      </ThemedText>
+      {match[2] && (
+        <ThemedText type="smallBold" themeColor="textSecondary" style={styles.center}>
+          {match[2]}
+        </ThemedText>
+      )}
+    </>
+  );
+}
+
+export function FlipCard({ front, frontContent, back, backContent, longQuestion, showBack, caption, label, flip, reducedMotion }: Props) {
   const theme = useTheme();
 
   const frontStyle = useAnimatedStyle(() =>
@@ -54,23 +74,8 @@ export function FlipCard({ front, frontContent, back, backContent, showBack, cap
 
   const face = [styles.face, { borderColor: theme.border, backgroundColor: theme.backgroundElement }];
   const scroll = [styles.scroll, label && styles.belowLabel];
-  const flag = COUNTRY_FLAG.exec(front);
-  const flagContent = flag ? (
-    <>
-      <ThemedText
-        accessibilityLabel="Флаг страны"
-        style={[styles.center, styles.flag]}
-        numberOfLines={1}
-        adjustsFontSizeToFit>
-        {flag[1]}
-      </ThemedText>
-      {flag[2] && (
-        <ThemedText type="smallBold" themeColor="textSecondary" style={styles.center}>
-          {flag[2]}
-        </ThemedText>
-      )}
-    </>
-  ) : null;
+  const frontFlag = renderFlag(front, true);
+  const backFlag = renderFlag(back);
   const badge = label ? (
     <ThemedText type="small" style={[styles.label, { color: theme.accent }]} numberOfLines={1}>
       {label}
@@ -85,11 +90,15 @@ export function FlipCard({ front, frontContent, back, backContent, showBack, cap
         importantForAccessibility={showBack ? 'no-hide-descendants' : 'auto'}>
         {badge}
         <ScrollView style={scroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          {flagContent ?? <ThemedText type="subtitle" style={styles.center} adjustsFontSizeToFit numberOfLines={4}>
-            {front}
-          </ThemedText>}
+          {frontFlag ?? <ThemedText
+                type={longQuestion ? 'default' : 'subtitle'}
+                style={[styles.center, longQuestion && styles.backText]}
+                adjustsFontSizeToFit={!longQuestion}
+                numberOfLines={longQuestion ? undefined : 4}>
+                {front}
+              </ThemedText>}
           <ThemedText type="small" themeColor="textSecondary" style={styles.center}>
-            {flag ? 'Назови страну' : caption}
+            {frontFlag ? 'Назови страну' : backFlag ? 'Опиши флаг страны' : caption}
           </ThemedText>
           {frontContent}
         </ScrollView>
@@ -101,10 +110,14 @@ export function FlipCard({ front, frontContent, back, backContent, showBack, cap
         importantForAccessibility={showBack ? 'auto' : 'no-hide-descendants'}>
         {badge}
         <ScrollView style={scroll} contentContainerStyle={styles.content}>
-          {flagContent ?? <ThemedText type="subtitle" themeColor="textSecondary" style={[styles.center, styles.backQuestion]}>
+          {frontFlag ?? <ThemedText
+            type="subtitle"
+            themeColor="textSecondary"
+            style={[styles.center, styles.backQuestion]}
+            numberOfLines={longQuestion ? 3 : undefined}>
             {front}
           </ThemedText>}
-          <ThemedText style={[styles.center, styles.backText]}>{back}</ThemedText>
+          {backFlag ?? <ThemedText style={[styles.center, styles.backText]}>{back}</ThemedText>}
           {backContent}
         </ScrollView>
       </Animated.View>

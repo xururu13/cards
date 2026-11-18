@@ -128,4 +128,5 @@ export const MIGRATIONS: readonly string[] = [
   ALTER TABLE answers_new RENAME TO answers;
   CREATE INDEX answers_round ON answers(round_id);
   `,
+  `ALTER TABLE rounds ADD COLUMN direction TEXT NOT NULL DEFAULT 'forward' CHECK (direction IN ('forward', 'reverse'));`,
 ];

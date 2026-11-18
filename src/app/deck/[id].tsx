@@ -92,13 +92,26 @@ export default function DeckScreen() {
                   style={[styles.fill, { backgroundColor: theme.accent, width: `${progress * 100}%` }]}
                 />
               </View>
-              <Button
-                title="Начать раунд"
-                variant="primary"
-                onPress={() =>
-                  router.push({ pathname: '/round/[deckId]', params: { deckId: deck.id } })
-                }
-              />
+              <View style={styles.actions}>
+                <View style={styles.action}>
+                  <Button
+                    title="Начать раунд"
+                    variant="primary"
+                    onPress={() => router.push({ pathname: '/round/[deckId]', params: { deckId: deck.id } })}
+                  />
+                </View>
+                <View style={styles.action}>
+                  <Button
+                    title="Наоборот"
+                    icon="swap-horizontal"
+                    accessibilityHint="Показывает оборот карточки, нужно вспомнить лицевую сторону"
+                    onPress={() => router.push({
+                      pathname: '/round/[deckId]',
+                      params: { deckId: deck.id, direction: 'reverse' },
+                    })}
+                  />
+                </View>
+              </View>
             </View>
           ) : undefined
         }

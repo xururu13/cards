@@ -12,6 +12,7 @@ import { Spacing } from '@/constants/theme';
 import { getRoundResult, type RoundAnswer } from '@/db/rounds';
 import { getBestRoundBefore, getScoreStats } from '@/db/stats';
 import { ALL_DECKS } from '@/round/mixed';
+import { roundSides } from '@/round/direction';
 import type { AnswerResult } from '@/db/types';
 import { useFocusLoad } from '@/hooks/use-focus-load';
 import { useTheme } from '@/hooks/use-theme';
@@ -56,7 +57,11 @@ export default function RoundResultScreen() {
   if (data === undefined) return <StatusScreen />;
   if (data === null) return <StatusScreen error="Раунд не найден." />;
 
-  const { round, answers, stats, previousBest } = data;
+  const { round, stats, previousBest } = data;
+  const answers = data.answers.map((answer) => {
+    const sides = roundSides(answer, round.direction);
+    return { ...answer, front: sides.question, back: sides.answer };
+  });
   const missed = missedCards(answers);
   const skipped = answers.filter((answer) => answer.result === 'skipped').length;
   const graded = answers.filter(a => a.grade !== null);
@@ -70,7 +75,7 @@ export default function RoundResultScreen() {
 
   return (
     <ThemedView style={[styles.container, { paddingBottom: insets.bottom + Spacing.three }]}>
-      <Stack.Screen options={{ headerBackVisible: false }} />
+      <Stack.Screen options={{ headerBackVisible: false, ...(round.direction === 'reverse' && { title: 'Итоги · Наоборот' }) }} />
       <FlatList
         data={missed}
         keyExtractor={(answer) => answer.card_id}
@@ -137,7 +142,7 @@ export default function RoundResultScreen() {
           onPress={() =>
             router.replace({
               pathname: '/round/[deckId]',
-              params: { deckId: round.deck_id ?? ALL_DECKS, fromRound: round.id },
+              params: { deckId: round.deck_id ?? ALL_DECKS, fromRound: round.id, direction: round.direction },
             })
           }
         />

@@ -3,7 +3,7 @@ import { totals, type SessionAnswer } from '@/round/session';
 
 import type { Db } from './db';
 import { newId } from './ids';
-import type { AnswerResult, Round } from './types';
+import type { AnswerResult, Round, RoundDirection } from './types';
 
 export interface RoundAnswer {
   grade: number | null;
@@ -30,6 +30,7 @@ export async function saveRound(
   startedAt: number,
   answers: readonly SessionAnswer[],
   now = Date.now(),
+  direction: RoundDirection = 'forward',
 ): Promise<string> {
   const roundId = newId();
   const { correct, wrong, hints } = totals(answers);
@@ -37,9 +38,9 @@ export async function saveRound(
 
   await db.withTransactionAsync(async () => {
     await db.runAsync(
-      `INSERT INTO rounds (id, deck_id, started_at, finished_at, correct, wrong, hints, score, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [roundId, deckId, startedAt, now, correct, wrong, hints, score, now],
+      `INSERT INTO rounds (id, deck_id, started_at, finished_at, correct, wrong, hints, score, updated_at, direction)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [roundId, deckId, startedAt, now, correct, wrong, hints, score, now, direction],
     );
     for (const answer of answers) {
       await db.runAsync(

@@ -36,6 +36,21 @@ const roundTrip = async (from: Awaited<ReturnType<typeof openMigratedDb>>) =>
   parseSnapshot(JSON.stringify(await exportSnapshot(from.db)));
 
 describe('снимок', () => {
+  it('сохраняет направление для итогов и повторения ошибок на другом устройстве', async () => {
+    const { phone, tablet, deckId, dog } = await twoDevices();
+    const old = await exportSnapshot(phone.db);
+    // В ранее выпущенных копиях поля direction не было.
+    const oldJson = { ...old, rounds: old.rounds.map(({ direction: _direction, ...round }) => round) };
+    expect(parseSnapshot(JSON.stringify(oldJson)).rounds[0].direction).toBe('forward');
+    const roundId = await saveRound(phone.db, deckId, 300, [
+      { cardId: dog, result: 'wrong', timeMs: 1500, points: 0, repeat: false },
+    ], 500, 'reverse');
+    const snapshot = await roundTrip(phone);
+    expect(snapshot.version).toBe(4);
+    await mergeSnapshot(tablet.db, snapshot);
+    expect((await exportSnapshot(tablet.db)).rounds.find(round => round.id === roundId)?.direction).toBe('reverse');
+  });
+
   it('передаёт пропущенные карточки между устройствами', async () => {
     const { phone, tablet, deckId, dog } = await twoDevices();
     expect((await exportSnapshot(phone.db)).version).toBe(2);

@@ -7,6 +7,7 @@ import { getRoundResult, listMissedCardIds, saveRound } from '../rounds';
 import { DEFAULT_SETTINGS, getSettings, setSetting } from '../settings';
 import { getBestRoundBefore, getScoreStats } from '../stats';
 import { openMigratedDb } from '../test-db';
+import { getWordOfDay } from '../word-of-day';
 
 jest.mock('../ids', () => {
   let n = 0;
@@ -143,6 +144,9 @@ describe('очки и рекорды', () => {
     const { db } = await setup();
     expect(await getScoreStats(db, noon(1))).toEqual({
       today: 0,
+      todayRounds: 0,
+      todayCorrect: 0,
+      todayAttempts: 0,
       bestDay: 0,
       bestRound: 0,
       bestRoundDeck: null,
@@ -158,9 +162,26 @@ describe('очки и рекорды', () => {
 
     expect(await getScoreStats(db, noon(9) + 1000)).toEqual({
       today: 12,
+      todayRounds: 1,
+      todayCorrect: 1,
+      todayAttempts: 1,
       bestDay: 75,
       bestRound: 50,
       bestRoundDeck: 'English',
+    });
+  });
+
+  it('сводка считает только завершённые сегодня раунды и исключает пропуски из процента', async () => {
+    const { db, deckId, cat, dog, fox } = await setup();
+    const day = new Date(2026, 0, 9, 12).getTime();
+    const midnight = new Date(2026, 0, 9).getTime();
+    const tomorrow = new Date(2026, 0, 10).getTime();
+    await saveRound(db, deckId, 0, [answer(cat, 'correct', 50)], midnight - 1);
+    await saveRound(db, deckId, 0, [answer(cat, 'correct', 10), answer(dog, 'skipped')], midnight);
+    await saveRound(db, deckId, 0, [answer(dog, 'wrong'), answer(fox, 'timeout')], tomorrow - 1);
+    await saveRound(db, deckId, 0, [answer(cat, 'correct', 50)], tomorrow);
+    expect(await getScoreStats(db, day)).toMatchObject({
+      today: 10, todayRounds: 2, todayCorrect: 1, todayAttempts: 3,
     });
   });
 
@@ -183,6 +204,27 @@ describe('очки и рекорды', () => {
 
     expect(await getBestRoundBefore(db, noon(1))).toBe(0);
     expect(await getBestRoundBefore(db, noon(2))).toBe(40);
+  });
+});
+
+describe('слово дня', () => {
+  it('сохраняет выбор на день и заменяет удалённую карточку', async () => {
+    const { db, deckId } = await setup();
+    const day = new Date(2026, 0, 9, 12).getTime();
+    const word = await getWordOfDay(db, day);
+    expect(word?.deck_name).toBe('English');
+    await createCard(db, deckId, { front: 'owl', back: 'сова' });
+    expect(await getWordOfDay(db, day + 60_000)).toEqual(word);
+    await deleteCard(db, word!.id);
+    expect((await getWordOfDay(db, day + 120_000))?.id).not.toBe(word!.id);
+  });
+
+  it('на следующий день выбирает другую карточку', async () => {
+    const { db } = await setup();
+    const today = await getWordOfDay(db, new Date(2026, 0, 9, 12).getTime());
+    const tomorrow = await getWordOfDay(db, new Date(2026, 0, 10, 12).getTime());
+    expect(tomorrow).toBeTruthy();
+    expect(tomorrow?.id).not.toBe(today?.id);
   });
 });
 

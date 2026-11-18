@@ -27,12 +27,13 @@ import { Spacing } from '@/constants/theme';
 import { listAllCards, listCards } from '@/db/cards';
 import { listMissedCardIds, saveRound } from '@/db/rounds';
 import { getSettings } from '@/db/settings';
-import type { Card } from '@/db/types';
+import type { Card, RoundDirection } from '@/db/types';
 import { useTheme } from '@/hooks/use-theme';
 import { useVoiceAnswer } from '@/hooks/use-voice-answer';
 import type { Evaluation } from '@/ai/grade';
 import { pickRoundCards, shuffle } from '@/round/picking';
 import { formatDelta } from '@/round/format';
+import { roundAnswerLanguage, roundSides } from '@/round/direction';
 import { ALL_DECKS } from '@/round/mixed';
 import { POINTS } from '@/round/scoring';
 import { isFinished, sessionReducer, startSession } from '@/round/session';
@@ -41,7 +42,9 @@ const FLIP_MS = 450;
 const SLIDE_MS = 260;
 
 export default function RoundScreen() {
-  const { deckId, fromRound } = useLocalSearchParams<{ deckId: string; fromRound?: string }>();
+  const params = useLocalSearchParams<{ deckId: string; fromRound?: string; direction?: string }>();
+  const { deckId, fromRound } = params;
+  const direction: RoundDirection = params.direction === 'reverse' ? 'reverse' : 'forward';
   const db = useSQLiteContext();
   const mixed = deckId === ALL_DECKS;
   const [round, setRound] = useState<{
@@ -56,7 +59,7 @@ export default function RoundScreen() {
   useEffect(() => {
     let active = true;
     (async () => {
-      const languages = Object.fromEntries((await listDecks(db)).map(d => [d.id, d.back_lang]));
+      const languages = Object.fromEntries((await listDecks(db)).map(deck => [deck.id, roundAnswerLanguage(deck, direction)]));
       const settings = await getSettings(db);
       const withDecks = mixed ? await listAllCards(db) : null;
       const all = withDecks ?? (await listCards(db, deckId));
@@ -74,7 +77,7 @@ export default function RoundScreen() {
     return () => {
       active = false;
     };
-  }, [db, deckId, fromRound, mixed]);
+  }, [db, deckId, direction, fromRound, mixed]);
 
   if (error) return <StatusScreen error={error} />;
   if (!round) return <StatusScreen />;
@@ -84,6 +87,7 @@ export default function RoundScreen() {
   return (
     <RoundPlay
       deckId={mixed ? null : deckId}
+      direction={direction}
       cards={round.cards}
       languages={round.languages}
       timeLimitMs={round.timeLimitMs}
@@ -96,13 +100,14 @@ type RoundPlayProps = {
   languages: Record<string, string>;
   /** null — смешанный раунд. */
   deckId: string | null;
+  direction: RoundDirection;
   cards: Card[];
   timeLimitMs: number | null;
   /** Названия стопок для подписи на карточке; null — раунд по одной стопке. */
   deckNames: Record<string, string> | null;
 };
 
-function RoundPlay({ deckId, cards, timeLimitMs, deckNames, languages }: RoundPlayProps) {
+function RoundPlay({ deckId, direction, cards, timeLimitMs, deckNames, languages }: RoundPlayProps) {
   const db = useSQLiteContext();
   const router = useRouter();
   const theme = useTheme();
@@ -130,13 +135,14 @@ function RoundPlay({ deckId, cards, timeLimitMs, deckNames, languages }: RoundPl
   const speaking = session.phase === 'voice';
   const accepting = asking || speaking;
   const item = session.queue[shownIndex];
+  const { question, answer } = roundSides(item.card, direction);
   const onEvaluation = useCallback((result: Evaluation) => {
     dispatch({ type: 'graded', index: shownIndex, ...result });
   }, [shownIndex]);
   const voice = useVoiceAnswer({
     enabled: speaking,
-    question: item.card.front,
-    reference: item.card.back,
+    question,
+    reference: answer,
     language: languages[item.card.deck_id] ?? 'ru-RU',
     onResult: onEvaluation,
   });
@@ -180,13 +186,13 @@ function RoundPlay({ deckId, cards, timeLimitMs, deckNames, languages }: RoundPl
     if (saving.current) return;
     saving.current = true;
     try {
-      const roundId = await saveRound(db, deckId, startedAt, session.answers);
+      const roundId = await saveRound(db, deckId, startedAt, session.answers, Date.now(), direction);
       router.replace({ pathname: '/round/result', params: { roundId } });
     } catch (e) {
       saving.current = false;
       setSaveError(e instanceof Error ? e.message : String(e));
     }
-  }, [db, deckId, router, session.answers, startedAt]);
+  }, [db, deckId, direction, router, session.answers, startedAt]);
 
   // Смена карточки: текущая уезжает влево, следующая въезжает справа.
   useEffect(() => {
@@ -375,7 +381,7 @@ function RoundPlay({ deckId, cards, timeLimitMs, deckNames, languages }: RoundPl
     <ThemedView style={[styles.container, { paddingBottom: insets.bottom + Spacing.three }]}>
       <Stack.Screen
         options={{
-          title: `${Math.min(shownIndex + 1, total)} из ${total}`,
+          title: `${direction === 'reverse' ? 'Наоборот · ' : ''}${Math.min(shownIndex + 1, total)} из ${total}`,
           headerRight: () => (
             <View style={[styles.score, { backgroundColor: theme.backgroundElement }]}>
               <ThemedText type="smallBold">{session.score} очк.</ThemedText>
@@ -420,7 +426,7 @@ function RoundPlay({ deckId, cards, timeLimitMs, deckNames, languages }: RoundPl
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={insets.top + 56}>
       <Animated.View style={[styles.flex, slideStyle]}>
         <FlipCard
-          front={item.card.front}
+          front={question}
           frontContent={speaking ? (
             <>
               <View style={styles.voiceHeader}>
@@ -447,7 +453,8 @@ function RoundPlay({ deckId, cards, timeLimitMs, deckNames, languages }: RoundPl
               <FormError message={voice.error} />
             </>
           ) : undefined}
-          back={item.card.back}
+          back={answer}
+          longQuestion={direction === 'reverse'}
           backContent={evaluation ? (
             <View style={styles.evaluation}>
               <View style={styles.stars} accessible accessibilityLabel={`Оценка: ${evaluation.grade} из 5 звёзд`}>
@@ -464,7 +471,9 @@ function RoundPlay({ deckId, cards, timeLimitMs, deckNames, languages }: RoundPl
             </View>
           ) : undefined}
           showBack={session.phase === 'answer'}
-          caption={item.repeat ? 'Повтор после ошибки. Вспомни, что на обороте' : 'Вспомни, что на обороте'}
+          caption={direction === 'reverse'
+            ? 'Вспомни, что на лицевой стороне'
+            : item.repeat ? 'Повтор после ошибки. Вспомни, что на обороте' : 'Вспомни, что на обороте'}
           label={deckNames?.[item.card.deck_id]}
           flip={flip}
           reducedMotion={reducedMotion}

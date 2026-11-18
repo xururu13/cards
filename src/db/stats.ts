@@ -3,6 +3,10 @@ import type { Db } from './db';
 export interface ScoreStats {
   /** Сумма очков за раунды, завершённые сегодня. */
   today: number;
+  todayRounds: number;
+  todayCorrect: number;
+  /** Проверенные ответы и истёкшее время. Явные пропуски сюда не входят. */
+  todayAttempts: number;
   /** Лучшая сумма очков за один день. */
   bestDay: number;
   /** Лучший счёт одного раунда. */
@@ -17,12 +21,21 @@ export function startOfDay(now: number): number {
   return date.getTime();
 }
 
+export function nextDayStart(now: number): number {
+  const date = new Date(startOfDay(now));
+  date.setDate(date.getDate() + 1);
+  return date.getTime();
+}
+
 /** Очки и рекорды. Раунды удалённых стопок учитываются: очки уже заработаны. */
 export async function getScoreStats(db: Db, now = Date.now()): Promise<ScoreStats> {
-  const today = await db.getFirstAsync<{ total: number }>(
-    `SELECT COALESCE(SUM(score), 0) AS total FROM rounds
-      WHERE deleted_at IS NULL AND finished_at >= ?`,
-    [startOfDay(now)],
+  const today = await db.getFirstAsync<{ total: number; rounds: number; correct: number; attempts: number }>(
+    `SELECT COALESCE(SUM(score), 0) AS total, COUNT(*) AS rounds,
+            COALESCE(SUM(correct), 0) AS correct,
+            COALESCE(SUM(correct + wrong + hints), 0) AS attempts
+       FROM rounds
+      WHERE deleted_at IS NULL AND finished_at >= ? AND finished_at < ?`,
+    [startOfDay(now), nextDayStart(now)],
   );
   const bestDay = await db.getFirstAsync<{ total: number }>(
     `SELECT SUM(score) AS total FROM rounds
@@ -40,6 +53,9 @@ export async function getScoreStats(db: Db, now = Date.now()): Promise<ScoreStat
   );
   return {
     today: today?.total ?? 0,
+    todayRounds: today?.rounds ?? 0,
+    todayCorrect: today?.correct ?? 0,
+    todayAttempts: today?.attempts ?? 0,
     bestDay: bestDay?.total ?? 0,
     bestRound: bestRound?.score ?? 0,
     bestRoundDeck: bestRound?.deck ?? null,
