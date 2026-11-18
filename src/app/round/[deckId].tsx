@@ -1,6 +1,7 @@
+import { Ionicons } from '@expo/vector-icons';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useEffectEvent, useReducer, useRef, useState } from 'react';
 import { Alert, BackHandler, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, {
   cancelAnimation,
@@ -127,6 +128,7 @@ function RoundPlay({ deckId, cards, timeLimitMs, deckNames, languages }: RoundPl
   const transitioning = shownIndex !== session.index;
   const asking = session.phase === 'question' && !transitioning;
   const speaking = session.phase === 'voice';
+  const accepting = asking || speaking;
   const item = session.queue[shownIndex];
   const onEvaluation = useCallback((result: Evaluation) => {
     dispatch({ type: 'graded', index: shownIndex, ...result });
@@ -138,24 +140,33 @@ function RoundPlay({ deckId, cards, timeLimitMs, deckNames, languages }: RoundPl
     language: languages[item.card.deck_id] ?? 'ru-RU',
     onResult: onEvaluation,
   });
+  const onDeadline = useEffectEvent((limit: number) => {
+    if (speaking && voice.submitAtDeadline()) return;
+    dispatch({ type: 'reveal', by: 'timeout', timeMs: limit });
+  });
 
   // Таймер вопроса: полоса убывает плавно, число обновляется несколько раз в секунду.
   useEffect(() => {
-    if (!asking) return;
-    questionStart.current = Date.now() - session.revealTimeMs;
+    if (!accepting) return;
+    questionStart.current = Date.now();
     if (!timeLimitMs) return;
-    timer.value = Math.max(0, 1 - session.revealTimeMs / timeLimitMs);
-    timer.value = withTiming(0, { duration: Math.max(0, timeLimitMs - session.revealTimeMs), easing: Easing.linear });
+    timer.value = 1;
+    timer.value = withTiming(0, { duration: timeLimitMs, easing: Easing.linear });
     const interval = setInterval(() => {
       const left = timeLimitMs - (Date.now() - questionStart.current);
       setRemainingMs(Math.max(0, left));
-      if (left <= 0) dispatch({ type: 'reveal', by: 'timeout', timeMs: timeLimitMs });
     }, 200);
+    const deadline = setTimeout(() => {
+      clearInterval(interval);
+      setRemainingMs(0);
+      onDeadline(timeLimitMs);
+    }, timeLimitMs);
     return () => {
       clearInterval(interval);
+      clearTimeout(deadline);
       cancelAnimation(timer);
     };
-  }, [asking, shownIndex, timer, timeLimitMs, session.revealTimeMs]);
+  }, [accepting, shownIndex, timer, timeLimitMs]);
 
   // Переворот при открытии оборота.
   useEffect(() => {
@@ -220,6 +231,7 @@ function RoundPlay({ deckId, cards, timeLimitMs, deckNames, languages }: RoundPl
 
   const total = session.queue.length;
   const lastAnswer = session.answers.at(-1);
+  const evaluation = session.evaluation;
   const seconds = Math.ceil(remainingMs / 1000);
   const timeLow = remainingMs <= 5000;
 
@@ -256,7 +268,9 @@ function RoundPlay({ deckId, cards, timeLimitMs, deckNames, languages }: RoundPl
             pulse={speaking && !voice.submitting && !voice.preparing && (voice.listening || !!voice.text.trim())}
             disabled={speaking && (voice.submitting || voice.preparing)}
             accessibilityState={{ busy: speaking && voice.submitting }}
-            accessibilityHint={speaking ? 'Завершает диктовку и отправляет ответ на оценку' : undefined}
+            accessibilityHint={speaking
+              ? voice.listening || voice.text.trim() ? 'Завершает диктовку и отправляет ответ на оценку' : 'Начинает диктовку заново'
+              : undefined}
             onPress={speaking ? voice.evaluate : () => {
               dispatch({ type: 'voice', timeMs: Date.now() - questionStart.current });
               voice.start();
@@ -264,16 +278,22 @@ function RoundPlay({ deckId, cards, timeLimitMs, deckNames, languages }: RoundPl
           />
         </View>
         <View style={styles.flex}>
-          <Button title="Проверить" variant="secondary" onPress={() => reveal('check')} />
+          <Button
+            title={speaking ? 'Сбросить' : 'Проверить'}
+            variant="secondary"
+            disabled={speaking && voice.submitting}
+            onPress={speaking ? () => {
+              voice.reset();
+              if (timeLimitMs !== null && remainingMs === 0) {
+                dispatch({ type: 'reveal', by: 'timeout', timeMs: timeLimitMs });
+              }
+            } : () => reveal('check')}
+          />
         </View>
       </View>
     );
-  } else if (session.reveal === 'voice' && session.evaluation) {
-    controls = <>
-      <ThemedText type="smallBold">Оценка: {session.evaluation.grade} из 5</ThemedText>
-      <ThemedText type="small">{session.evaluation.feedback}</ThemedText>
-      <Button title="Дальше" variant="primary" onPress={() => dispatch({ type: 'continue' })} />
-    </>;
+  } else if (evaluation) {
+    controls = <Button title="Дальше" variant="primary" onPress={() => dispatch({ type: 'continue' })} />;
   } else if (session.reveal === 'check') {
     controls = (
       <View style={styles.rate}>
@@ -366,12 +386,29 @@ function RoundPlay({ deckId, cards, timeLimitMs, deckNames, languages }: RoundPl
                 multiline
                 maxLength={2000}
                 editable={voice.editable}
-                placeholder="Твой ответ…"
+                style={styles.voiceText}
+                placeholder={voice.editable ? 'Введи ответ или нажми «Оценить» для диктовки' : 'Твой ответ…'}
               />
               <FormError message={voice.error} />
             </>
           ) : undefined}
           back={item.card.back}
+          backContent={evaluation ? (
+            <View style={styles.evaluation}>
+              <View style={styles.stars} accessible accessibilityLabel={`Оценка: ${evaluation.grade} из 5 звёзд`}>
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <Ionicons
+                    key={star}
+                    name={star <= evaluation.grade ? 'star' : 'star-outline'}
+                    color={star <= evaluation.grade ? theme.warning : theme.textSecondary}
+                    size={32}
+                  />
+                ))}
+              </View>
+              <ThemedText style={styles.feedback}>{evaluation.feedback}</ThemedText>
+            </View>
+          ) : undefined}
+          showBack={session.phase === 'answer'}
           caption={item.repeat ? 'Повтор после ошибки. Вспомни, что на обороте' : 'Вспомни, что на обороте'}
           label={deckNames?.[item.card.deck_id]}
           flip={flip}
@@ -397,4 +434,8 @@ const styles = StyleSheet.create({
   controls: { minHeight: 104, gap: Spacing.two, justifyContent: 'flex-end' },
   rate: { flexDirection: 'row', gap: Spacing.two },
   center: { textAlign: 'center' },
+  voiceText: { fontSize: 20, lineHeight: 28 },
+  evaluation: { gap: Spacing.three, paddingTop: Spacing.two },
+  stars: { flexDirection: 'row', justifyContent: 'center', gap: Spacing.two },
+  feedback: { fontSize: 20, lineHeight: 28, textAlign: 'center' },
 });

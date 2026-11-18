@@ -133,15 +133,21 @@ describe('totals', () => {
   });
 });
 
-it('голос блокирует таймаут, сохраняет оценку и игнорирует повторный результат AI', () => {
+it('сохраняет оценку голосового ответа и игнорирует повторный результат AI', () => {
   const start = startSession([card('a')], LIMIT);
   const speaking = sessionReducer(start, { type: 'voice', timeMs: 6000 });
-  expect(sessionReducer(speaking, { type: 'reveal', by: 'timeout', timeMs: LIMIT })).toBe(speaking);
   expect(sessionReducer(speaking, { type: 'cancelVoice' })).toMatchObject({ phase: 'question', revealTimeMs: 6000 });
   const graded = sessionReducer(speaking, { type: 'graded', index: 0, grade: 4, feedback: 'Хорошо' });
   expect(sessionReducer(graded, { type: 'graded', index: 0, grade: 5, feedback: 'Повтор' })).toBe(graded);
   const done = sessionReducer(graded, next);
   expect(done.answers[0]).toMatchObject({ grade: 4, result: 'correct', points: 12, timeMs: 6000 });
+});
+it('таймаут без текста в голосовом режиме открывает оборот и игнорирует позднюю оценку', () => {
+  const speaking = play(startSession([card('a')], LIMIT), { type: 'voice', timeMs: 6000 });
+  const timedOut = sessionReducer(speaking, { type: 'reveal', by: 'timeout', timeMs: LIMIT });
+  expect(timedOut).toMatchObject({ phase: 'answer', reveal: 'timeout', revealTimeMs: LIMIT });
+  expect(sessionReducer(timedOut, { type: 'graded', index: 0, grade: 5, feedback: 'Поздняя оценка' })).toBe(timedOut);
+  expect(sessionReducer(timedOut, next).answers[0]).toMatchObject({ result: 'timeout', timeMs: LIMIT });
 });
 it('«Проверить» во время записи открывает оборот и игнорирует результат AI', () => {
   const speaking = play(startSession([card('a')], LIMIT), { type: 'voice', timeMs: 6000 });

@@ -124,7 +124,7 @@ export function sessionReducer(session: Session, action: SessionAction): Session
       if (session.phase === 'voice' && action.by === 'check') {
         return { ...session, phase: 'answer', reveal: 'check' };
       }
-      if (session.phase !== 'question') return session;
+      if (session.phase !== 'question' && !(session.phase === 'voice' && action.by === 'timeout')) return session;
       return { ...session, phase: 'answer', reveal: action.by, revealTimeMs: action.timeMs };
     case 'rate':
       if (session.phase !== 'answer' || session.reveal !== 'check') return session;

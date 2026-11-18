@@ -61,6 +61,7 @@ export function useDictation<Target extends string>(onText: (target: Target, tex
   const cancel = useCallback(() => {
     abort();
     finish();
+    setError(null);
   }, [abort, finish]);
 
   useEffect(() => abort, [abort]);
