@@ -19,6 +19,7 @@ import { Button } from '@/components/button';
 import { FlipCard } from '@/components/flip-card';
 import { FormError } from '@/components/form';
 import { HeaderIcon } from '@/components/header-icon';
+import { RoundCoach } from '@/components/round-coach';
 import { StatusScreen } from '@/components/status-screen';
 import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
@@ -29,6 +30,7 @@ import { listMissedCardIds, saveRound } from '@/db/rounds';
 import { getSettings } from '@/db/settings';
 import type { Card, RoundDirection } from '@/db/types';
 import { useTheme } from '@/hooks/use-theme';
+import { useOnboarding } from '@/hooks/use-onboarding';
 import { useVoiceAnswer } from '@/hooks/use-voice-answer';
 import type { Evaluation } from '@/ai/grade';
 import { pickRoundCards, shuffle } from '@/round/picking';
@@ -114,6 +116,7 @@ function RoundPlay({ deckId, direction, cards, timeLimitMs, deckNames, languages
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const reducedMotion = useReducedMotion();
+  const { deckId: guidedDeckId, finish: finishOnboarding } = useOnboarding();
 
   const [session, dispatch] = useReducer(sessionReducer, undefined, () =>
     startSession(cards, timeLimitMs),
@@ -134,6 +137,8 @@ function RoundPlay({ deckId, direction, cards, timeLimitMs, deckNames, languages
   const asking = session.phase === 'question' && !transitioning;
   const speaking = session.phase === 'voice';
   const accepting = asking || speaking;
+  const showRoundGuide = guidedDeckId !== null && guidedDeckId === deckId && asking && shownIndex === 0;
+  const running = accepting && !showRoundGuide;
   const item = session.queue[shownIndex];
   const { question, answer } = roundSides(item.card, direction);
   const onEvaluation = useCallback((result: Evaluation) => {
@@ -147,14 +152,14 @@ function RoundPlay({ deckId, direction, cards, timeLimitMs, deckNames, languages
     onResult: onEvaluation,
   });
   const onDeadline = useEffectEvent((limit: number, index: number) => {
-    if (index !== session.index || !accepting) return;
+    if (index !== session.index || !running) return;
     if (speaking && voice.submitAtDeadline()) return;
     dispatch({ type: 'reveal', by: 'timeout', timeMs: limit, index });
   });
 
   // Таймер вопроса: полоса убывает плавно, число обновляется несколько раз в секунду.
   useEffect(() => {
-    if (!accepting) return;
+    if (!running) return;
     questionStart.current = Date.now();
     if (!timeLimitMs) return;
     timer.value = 1;
@@ -173,7 +178,7 @@ function RoundPlay({ deckId, direction, cards, timeLimitMs, deckNames, languages
       clearTimeout(deadline);
       cancelAnimation(timer);
     };
-  }, [accepting, shownIndex, timer, timeLimitMs]);
+  }, [running, shownIndex, timer, timeLimitMs]);
 
   // Переворот при открытии оборота.
   useEffect(() => {
@@ -227,14 +232,22 @@ function RoundPlay({ deckId, direction, cards, timeLimitMs, deckNames, languages
     return () => subscription.remove();
   }, [confirmExit]);
 
+  const beginAction = () => {
+    if (showRoundGuide) {
+      finishOnboarding();
+      return 0;
+    }
+    return questionStart.current ? Date.now() - questionStart.current : 0;
+  };
+
   const check = () => {
     if (speaking) voice.discard();
-    dispatch({ type: 'reveal', by: 'check', index: shownIndex, timeMs: Date.now() - questionStart.current });
+    dispatch({ type: 'reveal', by: 'check', index: shownIndex, timeMs: beginAction() });
   };
 
   const skip = () => {
     if (speaking) voice.discard();
-    dispatch({ type: 'skip', index: shownIndex, timeMs: Date.now() - questionStart.current });
+    dispatch({ type: 'skip', index: shownIndex, timeMs: beginAction() });
   };
 
   const resetVoice = () => {
@@ -329,7 +342,7 @@ function RoundPlay({ deckId, direction, cards, timeLimitMs, deckNames, languages
             variant="primary"
             compact
             onPress={() => {
-              dispatch({ type: 'voice', timeMs: Date.now() - questionStart.current });
+              dispatch({ type: 'voice', timeMs: beginAction() });
               voice.start();
             }}
           />
@@ -480,7 +493,15 @@ function RoundPlay({ deckId, direction, cards, timeLimitMs, deckNames, languages
         />
       </Animated.View>
       </KeyboardAvoidingView>
-      {controls && <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: 240, flexGrow: 0 }} contentContainerStyle={styles.controls}>{controls}</ScrollView>}
+      {controls && (
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          style={{ maxHeight: showRoundGuide ? 280 : 240, flexGrow: 0 }}
+          contentContainerStyle={styles.controls}>
+          {showRoundGuide && <RoundCoach onDismiss={finishOnboarding} />}
+          {controls}
+        </ScrollView>
+      )}
     </ThemedView>
   );
 }

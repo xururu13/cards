@@ -8,6 +8,7 @@ import { createCard } from '@/db/cards';
 import { getDeck, type DeckSummary } from '@/db/decks';
 import { useDeckLanguages } from '@/hooks/use-deck-languages';
 import { useFocusLoad } from '@/hooks/use-focus-load';
+import { useOnboarding } from '@/hooks/use-onboarding';
 
 export default function NewCardScreen() {
   const { deckId } = useLocalSearchParams<{ deckId: string }>();
@@ -23,6 +24,7 @@ export default function NewCardScreen() {
 function NewCardForm({ deck }: { deck: DeckSummary }) {
   const db = useSQLiteContext();
   const router = useRouter();
+  const onboarding = useOnboarding();
   const [languages, changeLanguage] = useDeckLanguages(db, deck);
   return (
     <CardForm
@@ -31,6 +33,7 @@ function NewCardForm({ deck }: { deck: DeckSummary }) {
       initial={{ front: '', back: '' }}
       languages={languages}
       onLanguageChange={changeLanguage}
+      guided={onboarding.deckId === deck.id && deck.card_count === 0}
       allowAddMore
       onSave={async (input, addMore) => {
         await createCard(db, deck.id, input);

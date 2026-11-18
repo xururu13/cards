@@ -3,6 +3,7 @@ import { SQLiteProvider } from 'expo-sqlite';
 import { useColorScheme } from 'react-native';
 
 import { migrate } from '@/db/migrate';
+import { OnboardingProvider } from '@/hooks/use-onboarding';
 import { AutoSync } from '@/sync/auto-sync';
 
 export default function RootLayout() {
@@ -11,6 +12,7 @@ export default function RootLayout() {
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <SQLiteProvider databaseName="cards.db" onInit={async (db) => void (await migrate(db))}>
         <AutoSync />
+        <OnboardingProvider>
         <Stack screenOptions={{ headerBackButtonDisplayMode: 'minimal' }}>
           <Stack.Screen name="index" options={{ title: 'Твои стопки' }} />
           <Stack.Screen name="settings" options={{ title: 'Настройки' }} />
@@ -24,6 +26,7 @@ export default function RootLayout() {
           <Stack.Screen name="round/[deckId]" options={{ title: 'Раунд' }} />
           <Stack.Screen name="round/result" options={{ title: 'Раунд завершён' }} />
         </Stack>
+        </OnboardingProvider>
       </SQLiteProvider>
     </ThemeProvider>
   );

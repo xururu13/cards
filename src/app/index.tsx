@@ -5,6 +5,7 @@ import { Alert, AppState, FlatList, Pressable, StyleSheet, View } from 'react-na
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
+import { CoachMark } from '@/components/coach-mark';
 import { DailyDashboard } from '@/components/daily-dashboard';
 import { HeaderIcon } from '@/components/header-icon';
 import { StatusScreen } from '@/components/status-screen';
@@ -16,6 +17,7 @@ import { getScoreStats, nextDayStart, startOfDay } from '@/db/stats';
 import { getWordOfDay } from '@/db/word-of-day';
 import { ALL_DECKS } from '@/round/mixed';
 import { useFocusLoad } from '@/hooks/use-focus-load';
+import { useOnboarding } from '@/hooks/use-onboarding';
 import { useTheme } from '@/hooks/use-theme';
 
 export default function DecksScreen() {
@@ -23,6 +25,7 @@ export default function DecksScreen() {
   const router = useRouter();
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const onboarding = useOnboarding();
   const [day, setDay] = useState(() => startOfDay(Date.now()));
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>;
@@ -48,6 +51,10 @@ export default function DecksScreen() {
     }, [db, day]),
   );
   const decks = data?.decks;
+  const guidedDeck = onboarding.deckId
+    ? decks?.find((deck) => deck.id === onboarding.deckId)
+    : onboarding.state === 'welcome' ? decks?.[0] : undefined;
+  const guideNewDeck = !!decks && !guidedDeck && onboarding.state !== null && onboarding.state !== 'done';
   // Смешанный раунд имеет смысл, когда карточки есть хотя бы в двух стопках.
   const canMix = (decks ?? []).filter((deck) => deck.card_count > 0).length >= 2;
 
@@ -84,22 +91,34 @@ export default function DecksScreen() {
           ) : undefined
         }
         renderItem={({ item }) => (
-          <Pressable
-            accessibilityRole="button"
-            style={[styles.row, { borderColor: theme.border }]}
-            onPress={() => router.push({ pathname: '/deck/[id]', params: { id: item.id } })}>
-            <ThemedText>{item.name}</ThemedText>
-            <ThemedText type="small" themeColor="textSecondary">
-              {item.card_count === 0
-                ? 'Пока без карточек'
-                : `Карточек: ${item.card_count} · сложных: ${item.hard_count}`}
-            </ThemedText>
-          </Pressable>
+          <CoachMark tip={guidedDeck?.id === item.id && {
+            title: 'Продолжи со своей стопкой',
+            body: item.card_count ? 'Открой стопку, чтобы начать первый раунд.' : 'Открой стопку, чтобы добавить первую карточку.',
+          }}>
+            <Pressable
+              accessibilityRole="button"
+              style={[styles.row, { borderColor: theme.border }]}
+              onPress={() => router.push({ pathname: '/deck/[id]', params: { id: item.id } })}>
+              <ThemedText>{item.name}</ThemedText>
+              <ThemedText type="small" themeColor="textSecondary">
+                {item.card_count === 0
+                  ? 'Пока без карточек'
+                  : `Карточек: ${item.card_count} · сложных: ${item.hard_count}`}
+              </ThemedText>
+            </Pressable>
+          </CoachMark>
         )}
       />
       <View style={styles.actions}>
         <View style={styles.action}>
-          <Button title="Новая стопка" variant="primary" onPress={() => router.push('/deck/new')} />
+          <CoachMark tip={guideNewDeck && {
+            title: 'Создай первую стопку',
+            body: 'Стопка хранит карточки по одной теме. Нажми «Новая стопка», чтобы собрать свою.',
+          }}>
+            <Button title="Новая стопка" variant="primary" onPress={() => router.push({
+              pathname: '/deck/new', params: guideNewDeck ? { guide: '1' } : {},
+            })} />
+          </CoachMark>
         </View>
         {canMix && (
           <View style={styles.action}>

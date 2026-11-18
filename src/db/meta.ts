@@ -1,7 +1,7 @@
 import type { Db } from './db';
 
 /** `aiPrompt:<id стопки>` — последняя подсказка для генерации оборота в этой стопке. */
-export type MetaKey = 'lastSyncAt' | 'wordOfDay' | `aiPrompt:${string}`;
+export type MetaKey = 'lastSyncAt' | 'wordOfDay' | 'onboarding' | `aiPrompt:${string}`;
 
 export async function getMeta(db: Db, key: MetaKey): Promise<string | null> {
   const row = await db.getFirstAsync<{ value: string }>(`SELECT value FROM meta WHERE key = ?`, [key]);

@@ -1,10 +1,11 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { Alert, FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
+import { CoachMark } from '@/components/coach-mark';
 import { deckToCatalogSet } from '@/catalog/catalog';
 import { shareCatalogSet } from '@/catalog/share-file';
 import { HeaderIcon } from '@/components/header-icon';
@@ -15,6 +16,7 @@ import { Spacing } from '@/constants/theme';
 import { cardStatus, listCards, type CardStatus } from '@/db/cards';
 import { getDeck } from '@/db/decks';
 import { useFocusLoad } from '@/hooks/use-focus-load';
+import { useOnboarding } from '@/hooks/use-onboarding';
 import { useTheme } from '@/hooks/use-theme';
 
 const STATUS_LABEL: Record<CardStatus, string> = {
@@ -30,12 +32,18 @@ export default function DeckScreen() {
   const router = useRouter();
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const { state: onboardingState, deckId: guidedDeckId, trackDeck } = useOnboarding();
   const { data, error } = useFocusLoad(
     useCallback(
       async () => ({ deck: await getDeck(db, id), cards: await listCards(db, id) }),
       [db, id],
     ),
   );
+  const loadedDeckId = data?.deck?.id;
+  useEffect(() => {
+    // Подхватывает и первую стопку, созданную импортом карточек.
+    if (onboardingState === 'welcome' && loadedDeckId) void trackDeck(loadedDeckId);
+  }, [loadedDeckId, onboardingState, trackDeck]);
 
   if (error) return <StatusScreen error={error} />;
   if (!data) return <StatusScreen />;
@@ -57,6 +65,27 @@ export default function DeckScreen() {
       Alert.alert('Не получилось поделиться', e instanceof Error ? e.message : String(e)),
     );
   const addCard = () => router.push({ pathname: '/card/new', params: { deckId: deck.id } });
+  const guided = guidedDeckId === deck.id || onboardingState === 'welcome';
+  const startRound = (
+    <Button title="Начать раунд" variant="primary"
+      onPress={() => router.push({ pathname: '/round/[deckId]', params: { deckId: deck.id } })} />
+  );
+  const reverseRound = (
+    <Button
+      title="Наоборот"
+      icon="swap-horizontal"
+      accessibilityHint="Показывает оборот карточки, нужно вспомнить лицевую сторону"
+      onPress={() => router.push({
+        pathname: '/round/[deckId]',
+        params: { deckId: deck.id, direction: 'reverse' },
+      })}
+    />
+  );
+  const addButton = <Button title="Добавить карточку" variant={cards.length ? 'secondary' : 'primary'} onPress={addCard} />;
+  const catalogButton = (
+    <Button title="Наборы карточек" icon="library-outline"
+      onPress={() => router.push({ pathname: '/catalog', params: { deckId: deck.id } })} />
+  );
 
   return (
     <ThemedView style={[styles.container, { paddingBottom: insets.bottom + Spacing.three }]}>
@@ -92,26 +121,20 @@ export default function DeckScreen() {
                   style={[styles.fill, { backgroundColor: theme.accent, width: `${progress * 100}%` }]}
                 />
               </View>
-              <View style={styles.actions}>
-                <View style={styles.action}>
-                  <Button
-                    title="Начать раунд"
-                    variant="primary"
-                    onPress={() => router.push({ pathname: '/round/[deckId]', params: { deckId: deck.id } })}
-                  />
+              {guided ? (
+                <>
+                  <CoachMark tip={{
+                    title: 'Начни первый раунд',
+                    body: 'Увидишь вопрос. Назови ответ или нажми «Проверить», чтобы открыть оборот.',
+                  }}>{startRound}</CoachMark>
+                  {reverseRound}
+                </>
+              ) : (
+                <View style={styles.actions}>
+                  <View style={styles.action}>{startRound}</View>
+                  <View style={styles.action}>{reverseRound}</View>
                 </View>
-                <View style={styles.action}>
-                  <Button
-                    title="Наоборот"
-                    icon="swap-horizontal"
-                    accessibilityHint="Показывает оборот карточки, нужно вспомнить лицевую сторону"
-                    onPress={() => router.push({
-                      pathname: '/round/[deckId]',
-                      params: { deckId: deck.id, direction: 'reverse' },
-                    })}
-                  />
-                </View>
-              </View>
+              )}
             </View>
           ) : undefined
         }
@@ -145,20 +168,20 @@ export default function DeckScreen() {
           );
         }}
       />
-      <View style={styles.actions}>
-        <View style={styles.action}>
-          <Button
-            title="Добавить карточку"
-            variant={cards.length ? 'secondary' : 'primary'}
-            onPress={addCard}
-          />
+      {guided && !cards.length ? (
+        <View style={styles.header}>
+          <CoachMark tip={{
+            title: 'Добавь первую карточку',
+            body: 'Нажми «Добавить карточку», чтобы записать вопрос и ответ к нему.',
+          }}>{addButton}</CoachMark>
+          {catalogButton}
         </View>
-        <Button
-          title="Наборы карточек"
-          icon="library-outline"
-          onPress={() => router.push({ pathname: '/catalog', params: { deckId: deck.id } })}
-        />
-      </View>
+      ) : (
+        <View style={styles.actions}>
+          <View style={styles.action}>{addButton}</View>
+          {catalogButton}
+        </View>
+      )}
     </ThemedView>
   );
 }

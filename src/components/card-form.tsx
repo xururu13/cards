@@ -5,6 +5,7 @@ import { Alert, Pressable, StyleSheet, View } from 'react-native';
 import type { PhotoSource } from '@/ai/photo';
 
 import { Button } from '@/components/button';
+import { CoachMark } from '@/components/coach-mark';
 import { FieldLabel, FormError, FormScreen } from '@/components/form';
 import { GenerateModal } from '@/components/generate-modal';
 import { PhotoTextModal } from '@/components/photo-text-modal';
@@ -28,6 +29,7 @@ type Props = {
   onSave: (input: CardInput, addMore: boolean) => Promise<boolean>;
   allowAddMore?: boolean;
   onDelete?: () => void;
+  guided?: boolean;
 };
 
 export function CardForm({
@@ -39,6 +41,7 @@ export function CardForm({
   onSave,
   allowAddMore,
   onDelete,
+  guided,
 }: Props) {
   const theme = useTheme();
   const [text, setText] = useState<Record<Side, string>>(initial);
@@ -46,6 +49,9 @@ export function CardForm({
   const [savedCount, setSavedCount] = useState(0);
   const [generating, setGenerating] = useState(false);
   const [photo, setPhoto] = useState<{ side: Side; source: PhotoSource } | null>(null);
+  const hasFront = !!text.front.trim();
+  const hasBack = !!text.back.trim();
+  const guideBack = guided && hasFront && !hasBack;
   // Текст поля на момент начала диктовки: распознанное дописывается после него.
   const dictationBase = useRef('');
 
@@ -124,8 +130,13 @@ export function CardForm({
               if (dictation.target) dictation.stop();
               setGenerating(true);
             }}
-            style={styles.mic}>
+            style={[
+              styles.mic,
+              guideBack && styles.guidedAi,
+              guideBack && { borderColor: theme.accent },
+            ]}>
             <Ionicons name="sparkles-outline" size={22} color={theme.accent} />
+            {guideBack && <ThemedText type="smallBold" themeColor="accent">AI</ThemedText>}
           </Pressable>
         )}
         <Pressable
@@ -156,7 +167,12 @@ export function CardForm({
     <FormScreen
       footer={
         <>
-          <Button title="Сохранить" variant="primary" onPress={() => save(false)} />
+          <CoachMark tip={guided && hasFront && hasBack && {
+            title: 'Сохрани карточку',
+            body: 'Нажми «Сохранить», чтобы вернуться к стопке и начать раунд.',
+          }}>
+            <Button title="Сохранить" variant="primary" onPress={() => save(false)} />
+          </CoachMark>
           {allowAddMore && <Button title="Сохранить и добавить ещё" onPress={() => save(true)} />}
           {onDelete && <Button title="Удалить карточку" variant="danger" onPress={onDelete} />}
         </>
@@ -165,25 +181,37 @@ export function CardForm({
         Стопка: {deckName}
       </ThemedText>
       <FieldLabel>Слово или термин</FieldLabel>
-      <TextField
-        value={text.front}
-        onChangeText={(value) => change('front', value)}
-        placeholder="Butterfly"
-        autoFocus={!initial.front}
-        highlighted={dictation.target === 'front'}
-        accessory={micControls('front')}
-        maxLength={200}
-      />
-      <FieldLabel>Перевод или объяснение</FieldLabel>
-      <TextField
-        value={text.back}
-        onChangeText={(value) => change('back', value)}
-        placeholder="Бабочка"
-        multiline
-        highlighted={dictation.target === 'back'}
-        accessory={micControls('back')}
-        maxLength={1000}
-      />
+      <CoachMark below tip={guided && !hasFront && {
+        title: 'Запиши вопрос',
+        body: 'Введи слово, термин или вопрос. Эту сторону увидишь в раунде первой.',
+      }}>
+        <TextField
+          accessibilityLabel="Слово или термин"
+          value={text.front}
+          onChangeText={(value) => change('front', value)}
+          placeholder="Butterfly"
+          autoFocus={!initial.front && !guided}
+          highlighted={dictation.target === 'front'}
+          accessory={micControls('front')}
+          maxLength={200}
+        />
+      </CoachMark>
+      <FieldLabel>{guideBack ? 'Введи ответ сам или нажми ✨ AI' : 'Перевод или объяснение'}</FieldLabel>
+      <CoachMark below tip={guideBack && {
+        title: 'Запиши ответ',
+        body: 'Введи перевод или объяснение. Кнопка ✨ AI предложит текст для оборота. Проверь его перед сохранением.',
+      }}>
+        <TextField
+          accessibilityLabel="Перевод или объяснение"
+          value={text.back}
+          onChangeText={(value) => change('back', value)}
+          placeholder={guideBack ? 'Перевод или объяснение' : 'Бабочка'}
+          multiline
+          highlighted={dictation.target === 'back'}
+          accessory={micControls('back')}
+          maxLength={1000}
+        />
+      </CoachMark>
       {dictation.target && (
         <ThemedText type="small" style={{ color: theme.accent }}>
           Слушаю… Говори, потом нажми «стоп» или просто замолчи.
@@ -217,6 +245,7 @@ export function CardForm({
 
 const styles = StyleSheet.create({
   accessory: { flexDirection: 'row', alignItems: 'center', gap: Spacing.one },
+  guidedAi: { width: 'auto', flexDirection: 'row', gap: Spacing.one, paddingHorizontal: Spacing.two, borderWidth: 1, borderRadius: 10 },
   lang: {
     borderWidth: 1,
     borderRadius: 8,
