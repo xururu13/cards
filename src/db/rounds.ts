@@ -93,7 +93,7 @@ export function listMissedCardIds(db: Db, roundId: string): Promise<{ id: string
   return db.getAllAsync<{ id: string }>(
     `SELECT DISTINCT c.id
        FROM answers a JOIN cards c ON c.id = a.card_id
-      WHERE a.round_id = ? AND a.result != 'correct' AND c.deleted_at IS NULL`,
+      WHERE a.round_id = ? AND a.result IN ('wrong', 'hint', 'timeout') AND c.deleted_at IS NULL`,
     [roundId],
   );
 }

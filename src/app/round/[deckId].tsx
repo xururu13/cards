@@ -140,9 +140,10 @@ function RoundPlay({ deckId, cards, timeLimitMs, deckNames, languages }: RoundPl
     language: languages[item.card.deck_id] ?? 'ru-RU',
     onResult: onEvaluation,
   });
-  const onDeadline = useEffectEvent((limit: number) => {
+  const onDeadline = useEffectEvent((limit: number, index: number) => {
+    if (index !== session.index || !accepting) return;
     if (speaking && voice.submitAtDeadline()) return;
-    dispatch({ type: 'reveal', by: 'timeout', timeMs: limit });
+    dispatch({ type: 'reveal', by: 'timeout', timeMs: limit, index });
   });
 
   // Таймер вопроса: полоса убывает плавно, число обновляется несколько раз в секунду.
@@ -159,7 +160,7 @@ function RoundPlay({ deckId, cards, timeLimitMs, deckNames, languages }: RoundPl
     const deadline = setTimeout(() => {
       clearInterval(interval);
       setRemainingMs(0);
-      onDeadline(timeLimitMs);
+      onDeadline(timeLimitMs, shownIndex);
     }, timeLimitMs);
     return () => {
       clearInterval(interval);
@@ -220,8 +221,24 @@ function RoundPlay({ deckId, cards, timeLimitMs, deckNames, languages }: RoundPl
     return () => subscription.remove();
   }, [confirmExit]);
 
-  const reveal = (by: 'check' | 'hint') =>
-    dispatch({ type: 'reveal', by, timeMs: Date.now() - questionStart.current });
+  const check = () => {
+    if (speaking) voice.discard();
+    dispatch({ type: 'reveal', by: 'check', index: shownIndex, timeMs: Date.now() - questionStart.current });
+  };
+
+  const skip = () => {
+    if (speaking) voice.discard();
+    dispatch({ type: 'skip', index: shownIndex, timeMs: Date.now() - questionStart.current });
+  };
+
+  const resetVoice = () => {
+    if (timeLimitMs !== null && remainingMs === 0) {
+      voice.discard();
+      dispatch({ type: 'reveal', by: 'timeout', timeMs: timeLimitMs, index: shownIndex });
+      return;
+    }
+    voice.reset();
+  };
 
   const slideStyle = useAnimatedStyle(() => ({
     opacity: 1 - Math.abs(slide.value),
@@ -234,6 +251,18 @@ function RoundPlay({ deckId, cards, timeLimitMs, deckNames, languages }: RoundPl
   const evaluation = session.evaluation;
   const seconds = Math.ceil(remainingMs / 1000);
   const timeLow = remainingMs <= 5000;
+  const hasVoiceText = !!voice.text.trim();
+  const recording = voice.listening || voice.preparing;
+  const canSend = voice.listening || hasVoiceText;
+  let voiceStatus = voice.stopped ? 'Запись остановлена' : 'Речь не распознана';
+  if (voice.submitting) voiceStatus = 'Оцениваем ответ…';
+  else if (voice.preparing) voiceStatus = 'Подключаем микрофон…';
+  else if (voice.listening) voiceStatus = 'Говори сейчас';
+  else if (hasVoiceText) voiceStatus = 'Ответ готов к отправке';
+  let voiceButtonTitle = 'Записать снова';
+  if (voice.submitting) voiceButtonTitle = 'Оцениваем…';
+  else if (recording) voiceButtonTitle = 'Завершить и отправить';
+  else if (hasVoiceText) voiceButtonTitle = 'Отправить ответ';
 
   let controls: React.ReactNode = null;
   if (saveError) {
@@ -254,41 +283,56 @@ function RoundPlay({ deckId, cards, timeLimitMs, deckNames, languages }: RoundPl
           styles.center,
           { color: lastAnswer.points > 0 ? theme.success : lastAnswer.points < 0 ? theme.danger : theme.textSecondary },
         ]}>
-        {formatDelta(lastAnswer.points)} очк.
+        {lastAnswer.result === 'skipped' ? 'Пропущено' : `${formatDelta(lastAnswer.points)} очк.`}
       </ThemedText>
     );
-  } else if (session.phase === 'question' || speaking) {
+  } else if (speaking) {
+    controls = (
+      <>
+        <Button
+          title={voiceButtonTitle}
+          variant="primary"
+          prominent
+          recording={voice.listening}
+          pulse={!voice.submitting && !voice.preparing && canSend}
+          disabled={voice.submitting || voice.preparing}
+          accessibilityState={{ busy: voice.submitting || voice.preparing }}
+          accessibilityHint={canSend ? 'Отправляет ответ на оценку' : undefined}
+          onPress={voice.evaluate}
+        />
+        <View style={styles.rate}>
+          <View style={styles.flex}>
+            <Button
+              title={recording ? 'Остановить запись' : 'Проверить'}
+              compact
+              onPress={recording ? voice.stopRecording : check}
+            />
+          </View>
+          <View style={styles.flex}>
+            <Button title="Пропустить" compact onPress={skip} />
+          </View>
+        </View>
+      </>
+    );
+  } else if (session.phase === 'question') {
     controls = (
       <View style={styles.rate}>
         <View style={styles.flex}>
           <Button
-            title={speaking ? 'Оценить' : 'Ответить'}
+            title="Ответить"
             variant="primary"
-            icon={voice.listening ? 'mic' : 'mic-outline'}
-            pulse={speaking && !voice.submitting && !voice.preparing && (voice.listening || !!voice.text.trim())}
-            disabled={speaking && (voice.submitting || voice.preparing)}
-            accessibilityState={{ busy: speaking && voice.submitting }}
-            accessibilityHint={speaking
-              ? voice.listening || voice.text.trim() ? 'Завершает диктовку и отправляет ответ на оценку' : 'Начинает диктовку заново'
-              : undefined}
-            onPress={speaking ? voice.evaluate : () => {
+            compact
+            onPress={() => {
               dispatch({ type: 'voice', timeMs: Date.now() - questionStart.current });
               voice.start();
             }}
           />
         </View>
         <View style={styles.flex}>
-          <Button
-            title={speaking ? 'Сбросить' : 'Проверить'}
-            variant="secondary"
-            disabled={speaking && voice.submitting}
-            onPress={speaking ? () => {
-              voice.reset();
-              if (timeLimitMs !== null && remainingMs === 0) {
-                dispatch({ type: 'reveal', by: 'timeout', timeMs: timeLimitMs });
-              }
-            } : () => reveal('check')}
-          />
+          <Button title="Проверить" compact onPress={check} />
+        </View>
+        <View style={styles.flex}>
+          <Button title="Пропустить" compact onPress={skip} />
         </View>
       </View>
     );
@@ -379,6 +423,12 @@ function RoundPlay({ deckId, cards, timeLimitMs, deckNames, languages }: RoundPl
           front={item.card.front}
           frontContent={speaking ? (
             <>
+              <View style={styles.voiceHeader}>
+                <ThemedText type="smallBold" accessibilityLiveRegion="polite" style={[styles.flex, styles.voiceStatus]}>
+                  {voiceStatus}
+                </ThemedText>
+                {!voice.submitting && <Button title="Сбросить" compact onPress={resetVoice} />}
+              </View>
               <TextField
                 accessibilityLabel="Распознанный ответ"
                 value={voice.text}
@@ -387,8 +437,13 @@ function RoundPlay({ deckId, cards, timeLimitMs, deckNames, languages }: RoundPl
                 maxLength={2000}
                 editable={voice.editable}
                 style={styles.voiceText}
-                placeholder={voice.editable ? 'Введи ответ или нажми «Оценить» для диктовки' : 'Твой ответ…'}
+                placeholder="Твой ответ…"
               />
+              {voice.listening && (
+                <ThemedText type="smallBold" themeColor="textSecondary">
+                  Закончил говорить? Нажми синюю кнопку внизу.
+                </ThemedText>
+              )}
               <FormError message={voice.error} />
             </>
           ) : undefined}
@@ -435,6 +490,8 @@ const styles = StyleSheet.create({
   rate: { flexDirection: 'row', gap: Spacing.two },
   center: { textAlign: 'center' },
   voiceText: { fontSize: 20, lineHeight: 28 },
+  voiceHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
+  voiceStatus: { fontSize: 18, lineHeight: 24 },
   evaluation: { gap: Spacing.three, paddingTop: Spacing.two },
   stars: { flexDirection: 'row', justifyContent: 'center', gap: Spacing.two },
   feedback: { fontSize: 20, lineHeight: 28, textAlign: 'center' },

@@ -3,7 +3,7 @@ import type { Answer, Card, Deck, Round } from '@/db/types';
 import { isGrade } from '@/round/scoring';
 
 export const SNAPSHOT_FORMAT = 'kartochki-backup';
-export const SNAPSHOT_VERSION = 2;
+export const SNAPSHOT_VERSION = 3;
 
 export interface SettingRow {
   key: string;
@@ -83,14 +83,15 @@ export async function exportSnapshot(db: Db, now = Date.now()): Promise<Snapshot
     const columns = Object.keys(TABLES[table]).join(', ');
     return db.getAllAsync<T>(`SELECT ${columns} FROM ${table} ORDER BY rowid`, []);
   };
+  const answers = await rows<Answer>('answers');
   return {
     format: SNAPSHOT_FORMAT,
-    version: SNAPSHOT_VERSION,
+    version: answers.some((answer) => answer.result === 'skipped') ? SNAPSHOT_VERSION : 2,
     exportedAt: now,
     decks: await rows<Deck>('decks'),
     cards: await rows<Card>('cards'),
     rounds: await rows<Round>('rounds'),
-    answers: await rows<Answer>('answers'),
+    answers,
     settings: await rows<SettingRow>('settings'),
   };
 }

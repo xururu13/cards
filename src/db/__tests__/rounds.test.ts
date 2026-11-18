@@ -117,6 +117,18 @@ describe('раунды', () => {
     expect(await listMissedCardIds(db, roundId)).toEqual([{ id: dog }]);
   });
 
+  it('хранит пропуск отдельно от ошибок и сохраняет уровень карточки', async () => {
+    const { raw, db, deckId, cat, dog } = await setup();
+    raw.prepare('UPDATE cards SET level = 3, correct_count = 4, wrong_count = 1 WHERE id = ?').run(cat);
+    const roundId = await saveRound(db, deckId, 1000, [answer(cat, 'skipped'), answer(dog, 'wrong')], 5000);
+
+    const result = await getRoundResult(db, roundId);
+    expect(result?.round).toMatchObject({ correct: 0, wrong: 1, hints: 0, score: 0 });
+    expect(result?.answers[0]).toMatchObject({ card_id: cat, result: 'skipped', points: 0, grade: null });
+    expect(await getCard(db, cat)).toMatchObject({ level: 3, correct_count: 4, wrong_count: 1 });
+    expect(await listMissedCardIds(db, roundId)).toEqual([{ id: dog }]);
+  });
+
   it('возвращает null для неизвестного раунда', async () => {
     const { db } = await setup();
     expect(await getRoundResult(db, 'нет')).toBeNull();

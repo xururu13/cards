@@ -41,8 +41,9 @@ export interface Session {
 export type SessionAction =
   | { type: 'voice'; timeMs: number }
   | { type: 'cancelVoice' }
+  | { type: 'skip'; index: number; timeMs: number }
   | { type: 'graded'; index: number; grade: Grade; feedback: string }
-  | { type: 'reveal'; by: Exclude<Reveal, 'voice'>; timeMs: number }
+  | { type: 'reveal'; by: Exclude<Reveal, 'voice'>; timeMs: number; index?: number }
   /** Самооценка после «Проверить». */
   | { type: 'rate'; correct: boolean }
   /** «Дальше» после подсказки или истёкшего времени. */
@@ -80,7 +81,7 @@ function record(session: Session, result: AnswerResult): Session {
   });
   // Счёт раунда не опускается ниже нуля.
   const score = Math.max(0, session.score + raw);
-  const missed = result !== 'correct';
+  const missed = result !== 'correct' && result !== 'skipped';
   return {
     ...session,
     // Ошибочная карточка возвращается в конец раунда, но только один раз.
@@ -102,7 +103,7 @@ function record(session: Session, result: AnswerResult): Session {
       },
     ],
     score,
-    streak: missed ? 0 : session.streak + 1,
+    streak: result === 'correct' ? session.streak + 1 : 0,
   };
 }
 
@@ -116,11 +117,15 @@ export function sessionReducer(session: Session, action: SessionAction): Session
     case 'cancelVoice':
       if (session.phase !== 'voice') return session;
       return { ...session, phase: 'question' };
+    case 'skip':
+      if (action.index !== session.index || session.phase === 'answer') return session;
+      return record({ ...session, revealTimeMs: action.timeMs }, 'skipped');
     case 'graded':
       if (session.phase !== 'voice' || action.index !== session.index || !isGrade(action.grade)) return session;
       return { ...session, phase: 'answer', reveal: 'voice', evaluation: { grade: action.grade, feedback: action.feedback } };
 
     case 'reveal':
+      if (action.index !== undefined && action.index !== session.index) return session;
       if (session.phase === 'voice' && action.by === 'check') {
         return { ...session, phase: 'answer', reveal: 'check' };
       }

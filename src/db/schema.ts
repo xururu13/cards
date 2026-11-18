@@ -110,4 +110,22 @@ export const MIGRATIONS: readonly string[] = [
   UPDATE answers SET grade = old_grade WHERE old_grade IS NOT NULL;
   ALTER TABLE answers DROP COLUMN old_grade;
   `,
+  `
+  CREATE TABLE answers_new (
+    id TEXT PRIMARY KEY NOT NULL,
+    round_id TEXT NOT NULL REFERENCES rounds(id),
+    card_id TEXT NOT NULL REFERENCES cards(id),
+    result TEXT NOT NULL CHECK (result IN ('correct', 'wrong', 'hint', 'timeout', 'skipped')),
+    time_ms INTEGER NOT NULL,
+    points INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    grade INTEGER CHECK (grade BETWEEN 0 AND 5)
+  );
+  INSERT INTO answers_new (id, round_id, card_id, result, time_ms, points, created_at, grade)
+    SELECT id, round_id, card_id, result, time_ms, points, created_at, grade
+    FROM answers ORDER BY rowid;
+  DROP TABLE answers;
+  ALTER TABLE answers_new RENAME TO answers;
+  CREATE INDEX answers_round ON answers(round_id);
+  `,
 ];

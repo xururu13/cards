@@ -16,17 +16,18 @@ import type { AnswerResult } from '@/db/types';
 import { useFocusLoad } from '@/hooks/use-focus-load';
 import { useTheme } from '@/hooks/use-theme';
 
-const MISS_LABEL: Record<Exclude<AnswerResult, 'correct'>, string> = {
+type MissedResult = Exclude<AnswerResult, 'correct' | 'skipped'>;
+const MISS_LABEL: Record<MissedResult, string> = {
   wrong: 'ошибка',
   hint: 'подсказка',
   timeout: 'время вышло',
 };
 
 /** По одной строке на карточку: причина — первый неверный ответ на неё в раунде. */
-function missedCards(answers: RoundAnswer[]): RoundAnswer[] {
+function missedCards(answers: RoundAnswer[]): (RoundAnswer & { result: MissedResult })[] {
   const seen = new Set<string>();
-  return answers.filter((answer) => {
-    if (answer.result === 'correct' || seen.has(answer.card_id)) return false;
+  return answers.filter((answer): answer is RoundAnswer & { result: MissedResult } => {
+    if (answer.result === 'correct' || answer.result === 'skipped' || seen.has(answer.card_id)) return false;
     seen.add(answer.card_id);
     return true;
   });
@@ -57,12 +58,14 @@ export default function RoundResultScreen() {
 
   const { round, answers, stats, previousBest } = data;
   const missed = missedCards(answers);
+  const skipped = answers.filter((answer) => answer.result === 'skipped').length;
   const graded = answers.filter(a => a.grade !== null);
   const isRecord = round.score > 0 && round.score > previousBest;
   const counters = [
     { label: 'Верно', value: round.correct, color: theme.success },
     { label: 'Ошибки', value: round.wrong, color: theme.danger },
     { label: 'Подсказки', value: round.hints, color: theme.text },
+    { label: 'Пропущено', value: skipped, color: theme.text },
   ];
 
   return (
@@ -109,7 +112,7 @@ export default function RoundResultScreen() {
               ))}
             </View>
             <ThemedText type="small" themeColor="textSecondary">
-              {missed.length > 0 ? 'Стоит повторить' : 'Все карточки вспомнил сам. Так держать.'}
+              {missed.length > 0 ? 'Стоит повторить' : skipped > 0 ? null : 'Все карточки вспомнил сам. Так держать.'}
             </ThemedText>
           </View>
         }
@@ -121,11 +124,9 @@ export default function RoundResultScreen() {
                 {item.back}
               </ThemedText>
             </View>
-            {item.result !== 'correct' && (
-              <ThemedText type="small" style={{ color: theme.danger }}>
-                {MISS_LABEL[item.result]}
-              </ThemedText>
-            )}
+            <ThemedText type="small" style={{ color: theme.danger }}>
+              {MISS_LABEL[item.result]}
+            </ThemedText>
           </View>
         )}
       />
@@ -162,7 +163,7 @@ const styles = StyleSheet.create({
   badge: { borderRadius: 12, paddingHorizontal: Spacing.three, paddingVertical: Spacing.one },
   badgeText: { color: '#3D2800' },
   counters: { flexDirection: 'row', gap: Spacing.two },
-  counter: { flex: 1, borderRadius: 12, padding: Spacing.three, gap: Spacing.one },
+  counter: { flex: 1, borderRadius: 12, paddingVertical: Spacing.three, paddingHorizontal: Spacing.one, gap: Spacing.one, alignItems: 'center' },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

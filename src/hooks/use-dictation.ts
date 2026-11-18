@@ -20,6 +20,8 @@ export function useDictation<Target extends string>(onText: (target: Target, tex
   const [error, setError] = useState<string | null>(null);
   const request = useRef<symbol | null>(null);
   const targetRef = useRef<Target | null>(null);
+  const ending = useRef(false);
+  const pendingStart = useRef<{ target: Target; lang: string } | null>(null);
   const [listening, setListening] = useState(false);
   const onTextRef = useRef(onText);
   useEffect(() => {
@@ -32,30 +34,14 @@ export function useDictation<Target extends string>(onText: (target: Target, tex
     setListening(false);
   }, []);
 
-  useSpeechRecognitionEvent('start', () => {
-    if (targetRef.current) setListening(true);
-  });
-  useSpeechRecognitionEvent('result', (event) => {
-    const text = event.results[0]?.transcript;
-    if (targetRef.current && text) onTextRef.current(targetRef.current, text);
-  });
-  useSpeechRecognitionEvent('end', () => {
-    if (targetRef.current) finish();
-  });
-  useSpeechRecognitionEvent('error', (event) => {
-    if (!targetRef.current) return;
-    // «aborted» приходит, когда диктовку остановили мы сами.
-    if (event.error !== 'aborted') {
-      setError(ERROR_TEXT[event.error] ?? 'Не получилось распознать речь. Попробуй ещё раз.');
-    }
-    finish();
-  });
-
   const abort = useCallback(() => {
     request.current = null;
-    const wasActive = targetRef.current !== null;
-    targetRef.current = null;
-    if (wasActive) ExpoSpeechRecognitionModule.abort();
+    pendingStart.current = null;
+    if (targetRef.current) {
+      targetRef.current = null;
+      ending.current = true;
+      ExpoSpeechRecognitionModule.abort();
+    }
   }, []);
 
   const cancel = useCallback(() => {
@@ -75,6 +61,13 @@ export function useDictation<Target extends string>(onText: (target: Target, tex
 
   const start = useCallback(async (next: Target, lang: string) => {
     if (request.current || targetRef.current) return;
+    if (ending.current) {
+      // После abort старый распознаватель ещё отправит end. Ждём его перед новой записью.
+      pendingStart.current = { target: next, lang };
+      setTarget(next);
+      setError(null);
+      return;
+    }
     const token = Symbol();
     request.current = token;
     try {
@@ -99,6 +92,29 @@ export function useDictation<Target extends string>(onText: (target: Target, tex
       if (request.current === token) request.current = null;
     }
   }, [finish]);
+
+  useSpeechRecognitionEvent('start', () => {
+    if (targetRef.current) setListening(true);
+  });
+  useSpeechRecognitionEvent('result', (event) => {
+    const text = event.results[0]?.transcript;
+    if (targetRef.current && text) onTextRef.current(targetRef.current, text);
+  });
+  useSpeechRecognitionEvent('end', () => {
+    ending.current = false;
+    if (targetRef.current) finish();
+    const next = pendingStart.current;
+    pendingStart.current = null;
+    if (next) void start(next.target, next.lang);
+  });
+  useSpeechRecognitionEvent('error', (event) => {
+    if (!targetRef.current) return;
+    if (event.error !== 'aborted') {
+      setError(ERROR_TEXT[event.error] ?? 'Не получилось распознать речь. Попробуй ещё раз.');
+    }
+    ending.current = true;
+    finish();
+  });
 
   return { target, listening, error, start, stop, cancel };
 }

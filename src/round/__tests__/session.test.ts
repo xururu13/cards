@@ -149,6 +149,19 @@ it('таймаут без текста в голосовом режиме отк
   expect(sessionReducer(timedOut, { type: 'graded', index: 0, grade: 5, feedback: 'Поздняя оценка' })).toBe(timedOut);
   expect(sessionReducer(timedOut, next).answers[0]).toMatchObject({ result: 'timeout', timeMs: LIMIT });
 });
+it.each(['question', 'voice'] as const)('пропуск из фазы %s не меняет счёт и очередь', (phase) => {
+  const afterCorrect = play(startSession([card('a'), card('b'), card('c')], LIMIT), check(0), right);
+  const active = phase === 'voice' ? sessionReducer(afterCorrect, { type: 'voice', timeMs: 1000 }) : afterCorrect;
+  const action = { type: 'skip', index: 1, timeMs: 2000 } as const;
+  const skipped = sessionReducer(active, action);
+  expect(skipped).toMatchObject({ phase: 'question', index: 2, score: afterCorrect.score });
+  expect(skipped.queue).toBe(afterCorrect.queue);
+  expect(skipped.answers.at(-1)).toEqual({ cardId: 'b', result: 'skipped', timeMs: 2000, points: 0, repeat: false });
+  expect(totals(skipped.answers)).toEqual({ correct: 1, wrong: 0, hints: 0 });
+  expect(sessionReducer(skipped, action)).toBe(skipped);
+  expect(sessionReducer(skipped, { type: 'reveal', by: 'timeout', index: 1, timeMs: LIMIT })).toBe(skipped);
+  expect(sessionReducer(skipped, { type: 'graded', index: 1, grade: 5, feedback: 'Поздняя оценка' })).toBe(skipped);
+});
 it('«Проверить» во время записи открывает оборот и игнорирует результат AI', () => {
   const speaking = play(startSession([card('a')], LIMIT), { type: 'voice', timeMs: 6000 });
   const checked = sessionReducer(speaking, check(15000));

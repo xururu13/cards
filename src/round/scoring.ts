@@ -15,6 +15,7 @@ export interface ScoreInput {
 }
 /** Голос и самооценка используют одну шкалу; повтор без бонуса, половина вниз. */
 export function scoreAnswer({ result, grade, timeMs, timeLimitMs, repeat }: ScoreInput): number {
+  if (result === 'skipped') return 0;
   if (result === 'hint') return POINTS.penalty;
   if (result === 'timeout') return POINTS.timeout;
   const mark = grade ?? (result === 'correct' ? 5 : 0);

@@ -24,6 +24,7 @@ export function useVoiceAnswer({ enabled, question, reference, language, onResul
   const submittingRef = useRef(false);
   const submitting = submission !== null;
   const [error, setError] = useState<string | null>(null);
+  const [stopped, setStopped] = useState(false);
   const speech = useDictation<'answer'>((_target, value) => setText(value.slice(0, 2000)));
   const { target, cancel } = speech;
 
@@ -42,9 +43,7 @@ export function useVoiceAnswer({ enabled, question, reference, language, onResul
       })
       .catch((e: unknown) => {
         if (active) {
-          setError(!answer.trim()
-            ? 'Ответ не распознан. Нажми «Оценить», чтобы повторить диктовку.'
-            : e instanceof Error ? e.message : String(e));
+          setError(!answer.trim() ? null : e instanceof Error ? e.message : String(e));
           submittingRef.current = false;
           setSubmission(null);
         }
@@ -55,6 +54,7 @@ export function useVoiceAnswer({ enabled, question, reference, language, onResul
   const start = () => {
     setText('');
     setError(null);
+    setStopped(false);
     submittingRef.current = false;
     setSubmission(null);
     void speech.start('answer', language);
@@ -93,12 +93,26 @@ export function useVoiceAnswer({ enabled, question, reference, language, onResul
   const reset = () => {
     if (submittingRef.current) return;
     speech.cancel();
+    start();
+  };
+
+  const discard = () => {
+    speech.cancel();
+    Keyboard.dismiss();
+    submittingRef.current = false;
+    setSubmission(null);
     setText('');
     setError(null);
+    setStopped(false);
+  };
+
+  const stopRecording = () => {
+    speech.cancel();
+    setStopped(true);
   };
 
   return {
-    text, setText, start, evaluate, reset, submitAtDeadline, submitting,
+    text, setText, start, evaluate, reset, discard, stopRecording, stopped, submitAtDeadline, submitting,
     error: error ?? speech.error,
     listening: speech.listening && !submitting,
     preparing: !!target && !speech.listening,

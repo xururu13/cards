@@ -1,4 +1,4 @@
-export type AnswerResult = 'correct' | 'wrong' | 'hint' | 'timeout';
+export type AnswerResult = 'correct' | 'wrong' | 'hint' | 'timeout' | 'skipped';
 
 export interface Deck {
   id: string;

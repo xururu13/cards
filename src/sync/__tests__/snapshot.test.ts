@@ -36,6 +36,18 @@ const roundTrip = async (from: Awaited<ReturnType<typeof openMigratedDb>>) =>
   parseSnapshot(JSON.stringify(await exportSnapshot(from.db)));
 
 describe('снимок', () => {
+  it('передаёт пропущенные карточки между устройствами', async () => {
+    const { phone, tablet, deckId, dog } = await twoDevices();
+    expect((await exportSnapshot(phone.db)).version).toBe(2);
+    const roundId = await saveRound(phone.db, deckId, 300, [
+      { cardId: dog, result: 'skipped', timeMs: 1000, points: 0, repeat: false },
+    ], 500);
+    const snapshot = await roundTrip(phone);
+    expect(snapshot.version).toBe(3);
+    await mergeSnapshot(tablet.db, snapshot);
+    expect((await exportSnapshot(tablet.db)).answers.find(a => a.round_id === roundId)?.result).toBe('skipped');
+  });
+
   it('переносит все данные на чистое устройство', async () => {
     const { phone, tablet } = await twoDevices();
     expect(await exportSnapshot(tablet.db, 1)).toEqual(await exportSnapshot(phone.db, 1));

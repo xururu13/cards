@@ -10,6 +10,7 @@ export interface Progress {
 
 /** «Вспомнил» поднимает уровень на 1; ошибка, подсказка и истёкшее время сбрасывают на 0. */
 export function applyAnswer(progress: Progress, result: AnswerResult): Progress {
+  if (result === 'skipped') return progress;
   if (result === 'correct') {
     return {
       level: Math.min(progress.level + 1, MAX_LEVEL),
