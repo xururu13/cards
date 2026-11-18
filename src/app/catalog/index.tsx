@@ -19,7 +19,7 @@ import { useTheme } from '@/hooks/use-theme';
 
 /** Список наборов, загруженных из файлов. `deckId` — добавить в существующую стопку. */
 export default function CatalogScreen() {
-  const { deckId } = useLocalSearchParams<{ deckId?: string }>();
+  const { deckId, guide } = useLocalSearchParams<{ deckId?: string; guide?: string }>();
   const db = useSQLiteContext();
   const router = useRouter();
   const theme = useTheme();
@@ -34,7 +34,7 @@ export default function CatalogScreen() {
   );
 
   const open = (setId: string) =>
-    router.push({ pathname: '/catalog/[setId]', params: deckId ? { setId, deckId } : { setId } });
+    router.push({ pathname: '/catalog/[setId]', params: { setId, deckId, guide } });
 
   const importFile = async () => {
     setBusy(true);
@@ -119,6 +119,12 @@ export default function CatalogScreen() {
         </ThemedText>
       </ScrollView>
       <View style={styles.footer}>
+        <Button
+          title="Импорт из онлайн-каталога"
+          icon="cloud-download-outline"
+          disabled={busy}
+          onPress={() => router.push({ pathname: '/online-catalog', params: { deckId, guide } })}
+        />
         <Button title="Загрузить из файла" icon="document-outline" disabled={busy} onPress={importFile} />
       </View>
     </ThemedView>
@@ -137,6 +143,6 @@ const styles = StyleSheet.create({
     padding: Spacing.three,
   },
   rowText: { flex: 1, gap: Spacing.one },
-  footer: { paddingHorizontal: Spacing.three },
+  footer: { paddingHorizontal: Spacing.three, gap: Spacing.two },
   center: { textAlign: 'center' },
 });

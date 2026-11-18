@@ -7,6 +7,13 @@ export interface CatalogEntry {
   importedAt: number;
 }
 
+export class CatalogSetExistsError extends Error {}
+
+interface SaveCatalogOptions {
+  expectedId?: string;
+  replaceExisting?: boolean;
+}
+
 /** Загруженные наборы по порядку загрузки. Испорченную запись (например, от будущей версии формата) пропускаем. */
 export async function loadCatalog(db: Db): Promise<CatalogEntry[]> {
   const rows = await db.getAllAsync<{ source: string; imported_at: number }>(
@@ -34,15 +41,21 @@ export async function saveImportedSet(
   db: Db,
   source: string,
   now = Date.now(),
+  { expectedId, replaceExisting = true }: SaveCatalogOptions = {},
 ): Promise<{ set: CatalogSet; replaced: boolean }> {
   const set = parseCatalogText(source);
-  const existing = await db.getFirstAsync<{ id: string }>(`SELECT id FROM catalog_sets WHERE id = ?`, [set.id]);
-  await db.runAsync(
+  if (expectedId !== undefined && set.id !== expectedId) {
+    throw new Error('Файл содержит другой набор. Обнови список и попробуй снова.');
+  }
+  const existing = replaceExisting &&
+    await db.getFirstAsync<{ id: string }>(`SELECT id FROM catalog_sets WHERE id = ?`, [set.id]);
+  const { changes } = await db.runAsync(
     `INSERT INTO catalog_sets (id, source, imported_at) VALUES (?, ?, ?)
-     ON CONFLICT (id) DO UPDATE SET source = excluded.source, imported_at = excluded.imported_at`,
-    [set.id, source, now],
+     ON CONFLICT (id) DO UPDATE SET source = excluded.source, imported_at = excluded.imported_at WHERE ?`,
+    [set.id, source, now, replaceExisting ? 1 : 0],
   );
-  return { set, replaced: existing !== null };
+  if (!changes) throw new CatalogSetExistsError();
+  return { set, replaced: Boolean(existing) };
 }
 
 /** Убирает загруженный набор из списка. Стопки и карточки из него остаются. */

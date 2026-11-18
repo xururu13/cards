@@ -15,6 +15,7 @@ import { importCatalog, loadedSections } from '@/db/catalog-import';
 import { loadCatalogSet } from '@/db/catalog-sets';
 import { getDeck } from '@/db/decks';
 import { useFocusLoad } from '@/hooks/use-focus-load';
+import { useOnboarding } from '@/hooks/use-onboarding';
 import { useTheme } from '@/hooks/use-theme';
 
 function cardsWord(n: number): string {
@@ -27,10 +28,12 @@ function cardsWord(n: number): string {
 
 /** Выбор глав и параграфов набора и загрузка их в стопку. */
 export default function CatalogSetScreen() {
-  const { setId, deckId } = useLocalSearchParams<{ setId: string; deckId?: string }>();
+  const { setId, deckId, guide } = useLocalSearchParams<{ setId: string; deckId?: string; guide?: string }>();
   const db = useSQLiteContext();
   const router = useRouter();
   const theme = useTheme();
+  const { state, trackDeck } = useOnboarding();
+  const guided = guide === '1' && !deckId && state !== null && state !== 'done';
 
   const { data, error: loadError } = useFocusLoad(
     useCallback(async () => {
@@ -93,6 +96,7 @@ export default function CatalogSetScreen() {
         Alert.alert('Ничего не добавлено', 'Все эти карточки уже есть в стопке.');
         return;
       }
+      if (guided) await trackDeck(result.deckId);
       // Экраны выбора больше не нужны: «назад» со стопки должно вести на главный экран.
       router.dismissAll();
       router.push({ pathname: '/deck/[id]', params: { id: result.deckId } });
@@ -125,6 +129,11 @@ export default function CatalogSetScreen() {
         </>
       }>
       <Stack.Screen options={{ title: set.title }} />
+      {guided && (
+        <ThemedText type="small" themeColor="textSecondary">
+          Отметь параграф и добавь карточки, чтобы начать первый раунд.
+        </ThemedText>
+      )}
       <ThemedText type="small" themeColor="textSecondary">
         {set.source ?? ''}
       </ThemedText>

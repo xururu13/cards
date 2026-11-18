@@ -113,11 +113,20 @@ export default function DecksScreen() {
         <View style={styles.action}>
           <CoachMark tip={guideNewDeck && {
             title: 'Создай первую стопку',
-            body: 'Стопка хранит карточки по одной теме. Нажми «Новая стопка», чтобы собрать свою.',
+            body: 'Создай свои карточки или выбери готовый набор для первого раунда.',
           }}>
-            <Button title="Новая стопка" variant="primary" onPress={() => router.push({
-              pathname: '/deck/new', params: guideNewDeck ? { guide: '1' } : {},
-            })} />
+            <View style={styles.firstDeckActions}>
+              <Button title="Новая стопка" variant="primary" onPress={() => router.push({
+                pathname: '/deck/new', params: guideNewDeck ? { guide: '1' } : {},
+              })} />
+              {guideNewDeck && (
+                <Button
+                  title="Начать с готового набора"
+                  icon="cloud-download-outline"
+                  onPress={() => router.push({ pathname: '/online-catalog', params: { guide: '1' } })}
+                />
+              )}
+            </View>
           </CoachMark>
         </View>
         {canMix && (
@@ -155,4 +164,5 @@ const styles = StyleSheet.create({
   row: { borderWidth: 1, borderRadius: 12, padding: Spacing.three, gap: Spacing.one },
   actions: { flexDirection: 'row', gap: Spacing.two },
   action: { flex: 1 },
+  firstDeckActions: { gap: Spacing.two },
 });

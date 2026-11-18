@@ -1,4 +1,4 @@
-import { deleteImportedSet, loadCatalog, loadCatalogSet, saveImportedSet } from '../catalog-sets';
+import { CatalogSetExistsError, deleteImportedSet, loadCatalog, loadCatalogSet, saveImportedSet } from '../catalog-sets';
 import { openMigratedDb } from '../test-db';
 
 const algebra = (term = 'Тождество') => `
@@ -43,6 +43,24 @@ describe('загруженные наборы', () => {
   it('ошибочный файл не сохраняется', async () => {
     const { db } = await openMigratedDb();
     await expect(saveImportedSet(db, 'title: X\nchapters: []')).rejects.toThrow(/нет глав/);
+    expect(await loadCatalog(db)).toEqual([]);
+  });
+
+  it('онлайн-импорт запрашивает замену и сохраняет локальную версию до подтверждения', async () => {
+    const { db } = await openMigratedDb();
+    const options = { expectedId: 'algebra-7', replaceExisting: false };
+    await saveImportedSet(db, algebra(), 100, options);
+    const update = algebra('Равенство');
+    await expect(saveImportedSet(db, update, 200, options)).rejects.toBeInstanceOf(CatalogSetExistsError);
+    expect((await loadCatalog(db))[0].importedAt).toBe(100);
+
+    await saveImportedSet(db, update, 200, { ...options, replaceExisting: true });
+    expect((await loadCatalog(db))[0].set.chapters[0].sections[0].cards[0].front).toBe('Равенство');
+  });
+
+  it('отклоняет файл с другим id до сохранения', async () => {
+    const { db } = await openMigratedDb();
+    await expect(saveImportedSet(db, algebra(), 100, { expectedId: 'another-set' })).rejects.toThrow(/другой набор/);
     expect(await loadCatalog(db)).toEqual([]);
   });
 

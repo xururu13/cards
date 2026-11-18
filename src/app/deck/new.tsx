@@ -26,7 +26,7 @@ export default function NewDeckScreen() {
       initial={{ name: '', frontLang: lang, backLang: lang }}
       submitTitle="Создать стопку"
       guided={guided}
-      onCatalog={() => router.replace('/catalog')}
+      onCatalog={() => router.replace({ pathname: '/catalog', params: guided ? { guide: '1' } : {} })}
       onSubmit={async (input) => {
         const id = await createDeck(db, input);
         if (guided) await onboarding.trackDeck(id);
